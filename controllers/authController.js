@@ -34,11 +34,15 @@ export const signup = async (req, res) => {
     // 3. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    
+
     // 4. Create user
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
+      role,
+
     });
 
     // 5. Generate JWT
@@ -56,6 +60,7 @@ export const signup = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     });
 
@@ -73,7 +78,7 @@ export const signup = async (req, res) => {
  */
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body;
 
     // 1. Validate input
     if (!email || !password) {
@@ -98,20 +103,31 @@ export const login = async (req, res) => {
       });
     }
 
-    // 4. Generate JWT
+    // 4. Role validation (ONLY if role is sent)
+    if (role && user.role !== role) {
+      return res.status(403).json({
+        message: `Access denied for role: ${role}`,
+      });
+    }
+
+    // 5. Generate JWT (include role)
     const token = jwt.sign(
-      { id: user._id },
+      {
+        id: user._id,
+        role: user.role,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    // 5. Send response
+    // 6. Send response
     return res.status(200).json({
       message: "Login successful",
       token,
       user: {
         id: user._id,
         email: user.email,
+        role: user.role,
       },
     });
 
@@ -122,6 +138,7 @@ export const login = async (req, res) => {
     });
   }
 };
+
 
 /**
  * GOOGLE AUTH
