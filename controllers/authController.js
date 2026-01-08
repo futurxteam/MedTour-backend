@@ -201,3 +201,39 @@ export const googleAuth = async (req, res) => {
     });
   }
 };
+export const createPrimaryAdmin = async (req, res) => {
+  try {
+    // 🔒 Check if admin already exists
+    const adminExists = await User.findOne({ role: "admin" });
+    if (adminExists) {
+      return res.status(403).json({
+        message: "Primary admin already exists",
+      });
+    }
+
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "All fields required" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const admin = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      role: "admin",
+    });
+
+    res.status(201).json({
+      message: "Primary admin created successfully",
+      admin: {
+        id: admin._id,
+        email: admin.email,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to create primary admin" });
+  }
+};
