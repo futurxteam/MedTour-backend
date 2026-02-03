@@ -1,3 +1,4 @@
+// models/User.js
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
@@ -7,6 +8,7 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
     email: {
       type: String,
       required: true,
@@ -14,25 +16,24 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+
     password: {
-  type: String,
-  required: function () {
-    return this.provider !== "google";
-  },
-},
-provider: {
-  type: String,
-  enum: ["local", "google"],
-  default: "local",
-},
-  role: {
-    type: String,
-    enum: ["user", "doctor", "assistant", "admin"],
-    default: "user",
-  },
+      type: String,
+      required: true,
+    },
+
+    role: {
+      type: String,
+      enum: ["user", "doctor", "assistant", "admin", "hospital"],
+      required: true,
+    },
+
+    active: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true }
 );
 
-const User = mongoose.model("User", userSchema);
-export default User;
+export default mongoose.model("User", userSchema);

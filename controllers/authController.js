@@ -4,6 +4,8 @@ import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library"; // ✅ ADDED
+import HospitalProfile from "../models/HospitalProfile.js";
+import PatientProfile from "../models/PatientProfile.js";
 
 // ✅ Google OAuth client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -34,20 +36,24 @@ export const signup = async (req, res) => {
     // 3. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    
-
-    // 4. Create user
+    // 4. Create user (PATIENT by default)
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
-      role,
-
+      role: "user",
+      active: true,
     });
 
-    // 5. Generate JWT
+    // 4.1 Create patient profile
+    await PatientProfile.create({
+      userId: user._id,
+      profileCompleted: false,
+    });
+
+    // 5. Generate JWT (identity only)
     const token = jwt.sign(
-      { id: user._id },
+      { id: user._id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -110,7 +116,33 @@ export const login = async (req, res) => {
       });
     }
 
-    // 5. Generate JWT (include role)
+    // 5. Active check
+    if (!user.active) {
+      return res.status(403).json({
+        message: "Account is disabled. Contact administrator.",
+      });
+    }
+
+    // 6. Hospital approval check (NEW ARCHITECTURE)
+    if (user.role === "hospital") {
+      const hospitalProfile = await HospitalProfile.findOne({
+        userId: user._id,
+      });
+
+      if (!hospitalProfile) {
+        return res.status(403).json({
+          message: "Hospital profile missing",
+        });
+      }
+
+      if (hospitalProfile.hospitalStatus !== "approved") {
+        return res.status(403).json({
+          message: "Hospital account awaiting approval",
+        });
+      }
+    }
+
+    // 7. Generate JWT (identity only — NO profile flags)
     const token = jwt.sign(
       {
         id: user._id,
@@ -120,7 +152,7 @@ export const login = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // 6. Send response
+    // 8. Send response
     return res.status(200).json({
       message: "Login successful",
       token,
@@ -138,7 +170,6 @@ export const login = async (req, res) => {
     });
   }
 };
-
 
 /**
  * GOOGLE AUTH
@@ -165,20 +196,26 @@ export const googleAuth = async (req, res) => {
     // 2. Find existing user
     let user = await User.findOne({ email });
 
-    // 3. Create user if not exists
+    // 3. Create user if not exists (PATIENT)
     if (!user) {
       user = await User.create({
         name,
         email,
-        password: null,          // Google users don’t need password
+        password: null,
+        role: "user",
+        active: true,
         provider: "google",
-        avatar: picture,
+      });
+
+      await PatientProfile.create({
+        userId: user._id,
+        profileCompleted: false,
       });
     }
 
-    // 4. Generate JWT
+    // 4. Generate JWT (identity only)
     const jwtToken = jwt.sign(
-      { id: user._id },
+      { id: user._id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -191,6 +228,7 @@ export const googleAuth = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     });
 
@@ -201,6 +239,10 @@ export const googleAuth = async (req, res) => {
     });
   }
 };
+
+/**
+ * CREATE PRIMARY ADMIN
+ */
 export const createPrimaryAdmin = async (req, res) => {
   try {
     // 🔒 Check if admin already exists
@@ -224,6 +266,7 @@ export const createPrimaryAdmin = async (req, res) => {
       email,
       password: hashedPassword,
       role: "admin",
+      active: true,
     });
 
     res.status(201).json({
@@ -236,4 +279,39 @@ export const createPrimaryAdmin = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Failed to create primary admin" });
   }
+};
+
+/**
+ * REGISTER HOSPITAL
+ * POST /api/auth/register-hospital
+ */
+export const registerHospital = async (req, res) => {
+  const { name, email, password } = req.body;
+
+  const exists = await User.findOne({ email });
+  if (exists) {
+    return res.status(409).json({ message: "Hospital already exists" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  const hospital = await User.create({
+    name,
+    email,
+    password: hashedPassword,
+    role: "hospital",
+    active: false,     // 🔒 cannot login yet
+    provider: "local",
+  });
+
+  // ✅ Create hospital profile (approval handled here)
+  await HospitalProfile.create({
+    userId: hospital._id,
+    hospitalStatus: "pending",
+    profileCompleted: false,
+  });
+
+  res.status(201).json({
+    message: "Hospital registration submitted",
+  });
 };
