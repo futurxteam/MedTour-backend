@@ -1,12 +1,10 @@
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import Surgery from "../models/Surgery.js";
 import DoctorProfile from "../models/DoctorProfile.js";
 import HospitalProfile from "../models/HospitalProfile.js";
 import Specialty from "../models/Speciality.js";
-
-
-
 
 /* =====================================================
    ADD DOCTOR
@@ -25,19 +23,15 @@ export const addDoctor = async (req, res) => {
       });
     }
 
-    // Fetch all valid specialties from database
-    const validSpecialties = await Specialty.find({ active: true }, "name");
-    const validSpecialtyNames = validSpecialties.map((s) => s.name);
+    // Fetch valid specialties by IDs
+    const validSpecialties = await Specialty.find({
+      _id: { $in: specializations },
+      active: true
+    });
 
-    // Validate specializations against database
-    const invalid = specializations.filter(
-      (s) => !validSpecialtyNames.includes(s)
-    );
-
-    if (invalid.length) {
+    if (validSpecialties.length !== specializations.length) {
       return res.status(400).json({
-        message: "Invalid specialization(s)",
-        invalid,
+        message: "One or more invalid specialization IDs provided",
       });
     }
 
@@ -93,19 +87,23 @@ export const listDoctors = async (req, res) => {
 
     const profiles = await DoctorProfile.find({
       hospitalId: userId,
-    }).populate("userId", "-password");
+    })
+      .populate("userId", "-password")
+      .populate("specializations", "name");
 
-    res.json(
-      profiles.map((p) => ({
-        _id: p.userId._id,
+    const formattedDoctors = profiles
+      .filter((p) => p.userId)
+      .map((p) => ({
         id: p.userId._id,
-        name: p.userId.name,
-        email: p.userId.email,
-        active: p.userId.active,
-        specializations: p.specializations,
-        profileCompleted: p.profileCompleted,
-      }))
-    );
+        _id: p.userId._id,
+        name: p.userId.name || "Unknown",
+        email: p.userId.email || "",
+        active: p.userId.active ?? true,
+        specializations: (p.specializations || []).map(s => s.name || s),
+        profileCompleted: !!p.profileCompleted,
+      }));
+
+    res.json(formattedDoctors);
   } catch (err) {
     console.error("List doctors error:", err);
     res.status(500).json({ message: "Server error" });
@@ -147,13 +145,13 @@ export const toggleDoctorStatus = async (req, res) => {
       active: doctor.active,
     });
   } catch (err) {
+    console.error("Toggle doctor error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
 /* =====================================================
-   GET HOSPITAL PROFILE (FOR HEADER / DASHBOARD)
-   GET /api/hospital/me
+   GET HOSPITAL PROFILE
 ===================================================== */
 export const getHospitalMe = async (req, res) => {
   try {
@@ -174,14 +172,16 @@ export const getHospitalMe = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 /* =====================================================
    ADD SURGERY
 ===================================================== */
 export const addSurgery = async (req, res) => {
   try {
     const hospitalUserId = req.user.id;
+
     const {
-      specialization,
+      specializationId,
       surgeryName,
       description,
       duration,
@@ -189,7 +189,7 @@ export const addSurgery = async (req, res) => {
       assignedDoctors = [],
     } = req.body;
 
-    // 1. Validate hospital profile
+    // Validate hospital profile
     const hospitalProfile = await HospitalProfile.findOne({
       userId: hospitalUserId,
       hospitalStatus: "approved",
@@ -199,19 +199,13 @@ export const addSurgery = async (req, res) => {
       return res.status(403).json({ message: "Hospital not approved" });
     }
 
-    // 2. Validate specialization exists in database
-    const validSpecialty = await Specialty.findOne({
-      name: specialization,
-      active: true,
-    });
-
-    if (!validSpecialty) {
-      return res.status(400).json({
-        message: "Invalid specialization",
-      });
+    // Validate specialty
+    const validSpecialty = await Specialty.findById(specializationId);
+    if (!validSpecialty || !validSpecialty.active) {
+      return res.status(400).json({ message: "Invalid specialization" });
     }
 
-    // 3. Validate assigned doctors belong to this hospital
+    // Validate assigned doctors belong to hospital
     if (assignedDoctors.length > 0) {
       const validDoctors = await DoctorProfile.countDocuments({
         userId: { $in: assignedDoctors },
@@ -225,15 +219,15 @@ export const addSurgery = async (req, res) => {
       }
     }
 
-    // 4. Create surgery
     const surgery = await Surgery.create({
       hospitalId: hospitalUserId,
-      specialization,
+      specialization: validSpecialty._id,
       surgeryName,
       description,
       duration,
       cost,
       assignedDoctors,
+      active: true,
     });
 
     res.status(201).json({
@@ -242,7 +236,10 @@ export const addSurgery = async (req, res) => {
     });
   } catch (error) {
     console.error("Add surgery error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({
+      message: "Failed to add surgery",
+      error: error.message,
+    });
   }
 };
 
@@ -256,8 +253,9 @@ export const listSurgeries = async (req, res) => {
     const surgeries = await Surgery.find({
       hospitalId: hospitalUserId,
     })
+      .populate("specialization", "name")
       .populate("assignedDoctors", "name email")
-      .sort({ specialization: 1, createdAt: -1 });
+      .sort({ createdAt: -1 });
 
     res.json(surgeries);
   } catch (error) {
@@ -295,9 +293,9 @@ export const toggleSurgeryStatus = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 /* =====================================================
    UPDATE HOSPITAL PROFILE
-   PUT /api/hospital/profile
 ===================================================== */
 export const updateHospitalProfile = async (req, res) => {
   try {
@@ -311,6 +309,7 @@ export const updateHospitalProfile = async (req, res) => {
       address,
       city,
       state,
+      country,
       phone,
       specialties,
       avatar,
@@ -324,8 +323,8 @@ export const updateHospitalProfile = async (req, res) => {
         address,
         city,
         state,
-        phone,
         country,
+        phone,
         specialties,
         avatar,
         profileCompleted: true,
@@ -343,19 +342,185 @@ export const updateHospitalProfile = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 /* =====================================================
-   GET ALL SPECIALTIES (FROM DATABASE)
-   GET /api/hospital/specializations
+   GET ALL SPECIALTIES
 ===================================================== */
 export const getHospitalSpecializations = async (req, res) => {
   try {
-    // Fetch all active specialties from database
-    const specialties = await Specialty.find({ active: true }, "name");
-    const specialtyNames = specialties.map((s) => s.name);
-
-    res.json({ specializations: specialtyNames });
+    const specializations = await Specialty.find({ active: true }, "name");
+    res.json({ specializations });
   } catch (err) {
     console.error("Get specializations error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getSurgeriesBySpecialization = async (req, res) => {
+  try {
+    const hospitalId = req.user.id;
+    const { specializationId } = req.params;
+
+    const surgeries = await Surgery.find({
+      hospitalId,
+      specialization: specializationId,
+      active: true,
+    }).select("surgeryName");
+
+    res.json(surgeries);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch surgeries" });
+  }
+};
+
+// POST /api/hospital/surgeries/:surgeryId/assign-doctor
+export const assignDoctorToSurgery = async (req, res) => {
+  try {
+    const hospitalId = req.user.id;
+    const { surgeryId } = req.params;
+    const { doctorId } = req.body;
+
+    const surgery = await Surgery.findOne({
+      _id: surgeryId,
+      hospitalId,
+    });
+
+    if (!surgery) {
+      return res.status(404).json({ message: "Surgery not found" });
+    }
+
+    if (!surgery.assignedDoctors.includes(doctorId)) {
+      surgery.assignedDoctors.push(doctorId);
+      await surgery.save();
+    }
+
+    res.json({ message: "Doctor assigned successfully" });
+  } catch (err) {
+    console.error("Assign doctor error:", err);
+    res.status(500).json({ message: "Assignment failed" });
+  }
+};
+
+// GET /api/hospital/surgeries/by-doctor/:doctorId
+export const getSurgeriesByDoctor = async (req, res) => {
+  try {
+    const hospitalId = req.user.id;
+    const { doctorId } = req.params;
+
+    // 1. Find doctor profile
+    const doctorProfile = await DoctorProfile.findOne({
+      userId: doctorId,
+      hospitalId,
+    });
+
+    if (!doctorProfile) {
+      return res.status(404).json({ message: "Doctor not found" });
+    }
+
+    // 2. Resolve specialization IDs if they are stored as names
+    let specialtyIds = doctorProfile.specializations;
+
+    // Check if any specialization is a string that doesn't look like an ID
+    const hasNames = specialtyIds.some(s => typeof s === 'string' && s.length > 24); // Not a perfect check but helpful
+    // Actually, let's just fetch everything matching names OR IDs
+
+    const matchedSpecialties = await Specialty.find({
+      $or: [
+        { _id: { $in: specialtyIds } },
+        { name: { $in: specialtyIds } }
+      ],
+      active: true
+    }).select("_id");
+
+    const resolvedIds = matchedSpecialties.map(s => s._id);
+
+    // 3. Fetch active surgeries matching any of the resolved specialization IDs
+    const surgeries = await Surgery.find({
+      hospitalId,
+      specialization: { $in: resolvedIds },
+      active: true,
+    })
+      .select("surgeryName specialization assignedDoctors")
+      .populate("specialization", "name");
+
+    res.json(surgeries);
+  } catch (err) {
+    console.error("Get surgeries by doctor error:", err);
+    res.status(500).json({ message: "Failed to fetch surgeries" });
+  }
+};
+
+// PATCH /api/hospital/doctors/:doctorId/surgeries
+export const updateDoctorSurgeries = async (req, res) => {
+  try {
+    const hospitalId = req.user._id || req.user.id;
+    const { doctorId } = req.params;
+    const { surgeryIds = [] } = req.body;
+
+    console.log(`Updating surgeries for doctor ${doctorId}. Selected:`, surgeryIds);
+
+    // 1. Validate doctor belongs to hospital
+    const doctorProfile = await DoctorProfile.findOne({
+      userId: doctorId,
+      hospitalId,
+    });
+
+    if (!doctorProfile) {
+      console.error(`Doctor ${doctorId} not found or not belonging to hospital ${hospitalId}`);
+      return res.status(404).json({ message: "Doctor not found or access denied" });
+    }
+
+    // 2. Resolve specialization IDs (handling both IDs and names safely)
+    const specIds = [];
+    const specNames = [];
+
+    (doctorProfile.specializations || []).forEach(s => {
+      const val = s?.toString() || s;
+      if (mongoose.Types.ObjectId.isValid(val)) specIds.push(val);
+      else specNames.push(val);
+    });
+
+    const matchedSpecialties = await Specialty.find({
+      $or: [
+        { _id: { $in: specIds } },
+        { name: { $in: specNames } }
+      ],
+      active: true
+    }).select("_id");
+
+    const resolvedSpecializationIds = matchedSpecialties.map(s => s._id);
+
+    // 3. Find all relevant surgeries for this doctor's specialization in this hospital
+    const relevantSurgeries = await Surgery.find({
+      hospitalId,
+      specialization: { $in: resolvedSpecializationIds }
+    });
+
+    // 4. Update each surgery's assignedDoctors list
+    const updatePromises = relevantSurgeries.map(async (surgery) => {
+      const surgeryIdStr = surgery._id.toString();
+      const isSelected = surgeryIds.includes(surgeryIdStr);
+
+      // Normalize comparison to string for safety
+      const hasDoctor = surgery.assignedDoctors.some(id => id.toString() === doctorId);
+
+      if (isSelected && !hasDoctor) {
+        // Add doctor
+        surgery.assignedDoctors.push(doctorId);
+        return surgery.save();
+      } else if (!isSelected && hasDoctor) {
+        // Remove doctor
+        surgery.assignedDoctors = surgery.assignedDoctors.filter(id => id.toString() !== doctorId);
+        return surgery.save();
+      }
+      return null; // No change needed
+    });
+
+    await Promise.all(updatePromises);
+
+    res.json({ message: "Assignments updated successfully" });
+  } catch (err) {
+    console.error("Update doctor surgeries error:", err);
+    res.status(500).json({ message: "Failed to update assignments", error: err.message });
   }
 };

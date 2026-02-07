@@ -14,6 +14,10 @@ import {
   listSurgeries,
   toggleSurgeryStatus,
   getHospitalSpecializations,
+  getSurgeriesBySpecialization,
+  assignDoctorToSurgery,
+  getSurgeriesByDoctor,
+  updateDoctorSurgeries,
 } from "../controllers/hospitalController.js";
 import attachUserContext from "../middleware/attachUserContext.js";
 
@@ -51,6 +55,9 @@ router.get("/me", verifyToken, getHospitalMe);
 router.put("/profile", verifyToken, updateHospitalProfile);
 
 // Surgeries
+// =========================
+// SURGERIES
+// =========================
 router.post(
   "/surgeries",
   verifyToken,
@@ -65,6 +72,13 @@ router.get(
   listSurgeries
 );
 
+router.get(
+  "/surgeries/by-specialization/:specializationId",
+  verifyToken,
+  authorizeRoles("hospital"),
+  getSurgeriesBySpecialization
+);
+
 router.patch(
   "/surgeries/:id/toggle",
   verifyToken,
@@ -72,6 +86,29 @@ router.patch(
   toggleSurgeryStatus
 );
 
+router.post(
+  "/surgeries/:surgeryId/assign-doctor",
+  verifyToken,
+  authorizeRoles("hospital"),
+  assignDoctorToSurgery
+);
+
+
+router.patch(
+  "/doctors/:doctorId/surgeries",
+  verifyToken,
+  attachUserContext,
+  authorizeRoles("hospital"),
+  updateDoctorSurgeries
+);
+
+
+router.get(
+  "/surgeries/by-doctor/:doctorId",
+  verifyToken,
+  authorizeRoles("hospital"),
+  getSurgeriesByDoctor
+);
 
 
 export default router;

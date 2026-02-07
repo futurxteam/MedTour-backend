@@ -22,8 +22,12 @@ const hospitalProfileSchema = new mongoose.Schema(
     city: String,
     state: String,
     phone: String,
-    specialties: [String],
-
+    specialties: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Specialty",
+      },
+    ],
     avatar: String,
     profileCompleted: {
       type: Boolean,

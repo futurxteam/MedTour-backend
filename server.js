@@ -1,3 +1,5 @@
+// MedTour-backend/server.js
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -8,10 +10,8 @@ import adminRoutes from "./routes/adminRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import doctorRoutes from "./routes/doctorRoutes.js";
 import hospitalRoutes from "./routes/hospitalRoutes.js";
-
 import specialtyRoutes from "./routes/specialtyRoutes.js";
-
-
+import publicRoutes from "./routes/publicRoutes.js"; // ✅ FIX
 
 dotenv.config();
 
@@ -23,12 +23,10 @@ const PORT = process.env.PORT || 5000;
 ========================= */
 mongoose
   .connect(process.env.MONGO_URI)
-  .then((conn) => {
-    console.log(`✅ MongoDB connected`);
-  })
+  .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => {
     console.error("MongoDB connection failed:", err.message);
-    process.exit(1); // stop server if DB fails
+    process.exit(1);
   });
 
 /* =========================
@@ -45,8 +43,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/doctor", doctorRoutes);
 app.use("/api/hospital", hospitalRoutes);
-
 app.use("/api/specialties", specialtyRoutes);
+app.use("/api/public", publicRoutes); // ✅ FIX
 
 /* =========================
    Root Test Route
@@ -59,6 +57,5 @@ app.get("/", (req, res) => {
    Start Server
 ========================= */
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
-

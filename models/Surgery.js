@@ -10,9 +10,10 @@ const surgerySchema = new mongoose.Schema(
     },
 
     specialization: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Specialty",
       required: true,
-      trim: true,
+      index: true
     },
 
     surgeryName: {

@@ -17,13 +17,15 @@ const doctorProfileSchema = new mongoose.Schema(
       required: true,
     },
 
+    // models/DoctorProfile.js
     specializations: [
       {
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Specialty",
         required: true,
-        trim: true,
       },
     ],
+
 
 
     experience: Number,
