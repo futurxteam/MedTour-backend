@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import HospitalProfile from "../models/HospitalProfile.js";
 import Specialty from "../models/Speciality.js";
+import Enquiry from "../models/Enquiry.js";
 
 
 /* =====================================================
@@ -349,4 +350,52 @@ export const toggleSpecialty = async (req, res) => {
   await specialty.save();
 
   res.json({ active: specialty.active });
+};
+
+
+export const getAllEnquiries = async (req, res) => {
+  try {
+    const enquiries = await Enquiry.find()
+      .sort({ createdAt: -1 })
+      .populate("specialtyId", "name")
+      .populate("surgeryId", "surgeryName")
+      .populate("doctorId", "name")
+      .populate("assignedPA", "name");
+
+    res.json(enquiries);
+  } catch (error) {
+    console.error("Fetch enquiries error:", error);
+    res.status(500).json({ message: "Failed to fetch enquiries" });
+  }
+};
+
+export const getAssistants = async (req, res) => {
+  try {
+    const assistants = await User.find({ role: "assistant", active: true }).select("name email _id");
+    res.json(assistants);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch assistants" });
+  }
+};
+
+export const assignPAtoEnquiry = async (req, res) => {
+  const { paId } = req.body;
+
+  const enquiry = await Enquiry.findById(req.params.id);
+  if (!enquiry) {
+    return res.status(404).json({ message: "Enquiry not found" });
+  }
+
+  enquiry.assignedPA = paId;
+  enquiry.status = "assigned";
+  await enquiry.save();
+
+  res.json({ message: "PA assigned successfully" });
+};
+
+export const updateEnquiryStatus = async (req, res) => {
+  const { status } = req.body;
+
+  await Enquiry.findByIdAndUpdate(req.params.id, { status });
+  res.json({ message: "Status updated" });
 };

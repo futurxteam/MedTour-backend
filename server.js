@@ -11,6 +11,7 @@ import userRoutes from "./routes/userRoutes.js";
 import doctorRoutes from "./routes/doctorRoutes.js";
 import hospitalRoutes from "./routes/hospitalRoutes.js";
 import specialtyRoutes from "./routes/specialtyRoutes.js";
+import assistantRoutes from "./routes/assistantRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js"; // ✅ FIX
 
 dotenv.config();
@@ -22,12 +23,12 @@ const PORT = process.env.PORT || 5000;
    MongoDB Connection
 ========================= */
 mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => {
-    console.error("MongoDB connection failed:", err.message);
-    process.exit(1);
-  });
+   .connect(process.env.MONGO_URI)
+   .then(() => console.log("✅ MongoDB connected"))
+   .catch((err) => {
+      console.error("MongoDB connection failed:", err.message);
+      process.exit(1);
+   });
 
 /* =========================
    Middleware
@@ -44,18 +45,19 @@ app.use("/api/user", userRoutes);
 app.use("/api/doctor", doctorRoutes);
 app.use("/api/hospital", hospitalRoutes);
 app.use("/api/specialties", specialtyRoutes);
+app.use("/api/assistant", assistantRoutes);
 app.use("/api/public", publicRoutes); // ✅ FIX
 
 /* =========================
    Root Test Route
 ========================= */
 app.get("/", (req, res) => {
-  res.send("MedTour backend running");
+   res.send("MedTour backend running");
 });
 
 /* =========================
    Start Server
 ========================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+   console.log(`🚀 Server running on port ${PORT}`);
 });

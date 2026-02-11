@@ -10,8 +10,12 @@ import {
   getApprovedHospitals,
   rejectHospital,
   getHospitals,
-
+  getAllEnquiries,
+  getAssistants,
+  assignPAtoEnquiry,
+  updateEnquiryStatus,
 } from "../controllers/adminController.js";
+
 
 import { verifyToken, authorizeRoles } from "../middleware/authMiddleware.js";
 
@@ -30,5 +34,10 @@ router.patch("/approve-hospital/:id", approveHospital);
 router.get("/approved-hospitals", getApprovedHospitals);
 router.patch("/reject-hospital/:id", rejectHospital);
 router.get("/hospitals", getHospitals);
+
+router.get("/enquiries", getAllEnquiries);
+router.get("/assistants", getAssistants);
+router.post("/enquiries/:id/assign-pa", assignPAtoEnquiry);
+router.patch("/enquiries/:id/status", updateEnquiryStatus);
 
 export default router;

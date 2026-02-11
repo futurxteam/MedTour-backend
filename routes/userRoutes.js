@@ -13,7 +13,9 @@ const router = express.Router();
 /* =========================
    User Profile Routes
 ========================= */
-router.get("/me", verifyToken, getCurrentUser);
+router.get("/me", verifyToken, getCurrentUser, attachUserContext, (req, res) => {
+  res.json(req.user);
+});
 router.get("/profile", verifyToken, getPatientProfile);
 router.put("/profile", verifyToken, updatePatientProfile);
 
