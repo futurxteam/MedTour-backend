@@ -81,6 +81,7 @@ export const signup = async (req, res) => {
 /**
  * LOGIN
  * POST /api/auth/login
+ * Supports both email and phone number login
  */
 export const login = async (req, res) => {
   try {
@@ -89,12 +90,18 @@ export const login = async (req, res) => {
     // 1. Validate input
     if (!email || !password) {
       return res.status(400).json({
-        message: "Email and password are required",
+        message: "Email/Phone and password are required",
       });
     }
 
-    // 2. Find user
-    const user = await User.findOne({ email });
+    // 2. Determine if login is with email or phone
+    const isPhone = /^\d+$/.test(email); // Check if input is all digits
+
+    // Find user by email or phone
+    const user = await User.findOne(
+      isPhone ? { phone: email } : { email: email }
+    );
+
     if (!user) {
       return res.status(400).json({
         message: "Invalid credentials",
@@ -158,7 +165,9 @@ export const login = async (req, res) => {
       token,
       user: {
         id: user._id,
+        name: user.name,
         email: user.email,
+        phone: user.phone,
         role: user.role,
       },
     });

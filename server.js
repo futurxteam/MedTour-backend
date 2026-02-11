@@ -12,6 +12,8 @@ import doctorRoutes from "./routes/doctorRoutes.js";
 import hospitalRoutes from "./routes/hospitalRoutes.js";
 import specialtyRoutes from "./routes/specialtyRoutes.js";
 import assistantRoutes from "./routes/assistantRoutes.js";
+import serviceJourneyRoutes from "./routes/serviceJourneyRoutes.js";
+import patientRoutes from "./routes/patientRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js"; // ✅ FIX
 
 dotenv.config();
@@ -46,6 +48,8 @@ app.use("/api/doctor", doctorRoutes);
 app.use("/api/hospital", hospitalRoutes);
 app.use("/api/specialties", specialtyRoutes);
 app.use("/api/assistant", assistantRoutes);
+app.use("/api/assistant", serviceJourneyRoutes);
+app.use("/api/patient", patientRoutes);
 app.use("/api/public", publicRoutes); // ✅ FIX
 
 /* =========================

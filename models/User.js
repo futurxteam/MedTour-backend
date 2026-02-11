@@ -17,6 +17,13 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    phone: {
+      type: String,
+      unique: true,
+      sparse: true, // Allows null values while maintaining uniqueness
+      trim: true,
+    },
+
     password: {
       type: String,
       required: true,
@@ -24,7 +31,7 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["user", "doctor", "assistant", "admin", "hospital"],
+      enum: ["user", "patient", "doctor", "assistant", "admin", "hospital"],
       required: true,
     },
 
