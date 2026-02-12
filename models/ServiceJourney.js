@@ -19,7 +19,6 @@ const stageSchema = new mongoose.Schema(
     // Optional dates
     startDate: Date,
     endDate: Date,
-    estimatedDate: Date,
 
     // For flight-specific stages
     flightDetails: {
@@ -31,6 +30,7 @@ const stageSchema = new mongoose.Schema(
 
     // Notes visible to patient
     notes: String,
+    durationHours: Number,
   },
   { timestamps: true }
 );
@@ -66,36 +66,119 @@ const serviceJourneySchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    currentDay: {
+      type: Number,
+      default: 0,
+    },
     estimatedCompletionDate: Date,
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
+
+// progressPercentage virtual
+serviceJourneySchema.virtual("progressPercentage").get(function () {
+  if (!this.stages || this.stages.length === 0) return 0;
+  const completedStages = this.stages.filter(
+    (s) => s.status === "completed"
+  ).length;
+  return Math.round((completedStages / this.stages.length) * 100);
+});
 
 // Index for faster queries
 serviceJourneySchema.index({ assignedPA: 1, status: 1 });
 serviceJourneySchema.index({ enquiryId: 1 });
 
-// Method to calculate total duration
+// Method to calculate durations
+
 serviceJourneySchema.methods.calculateTotalDuration = function () {
-  let total = 0;
-  this.stages.forEach((stage) => {
-    if (stage.startDate && stage.endDate) {
-      const duration =
-        (stage.endDate - stage.startDate) / (1000 * 60 * 60 * 24);
-      total += duration;
+  const stages = this.stages || [];
+
+  if (stages.length === 0) {
+    this.totalDuration = 0;
+    this.currentDay = 0;
+    return 0;
+  }
+
+  let minTime = null;
+  let maxTime = null;
+
+  // Find earliest startDate & latest endDate
+  stages.forEach((stage) => {
+    if (stage.startDate) {
+      const time = new Date(stage.startDate).getTime();
+      if (!isNaN(time)) {
+        if (minTime === null || time < minTime) minTime = time;
+      }
+    }
+
+    if (stage.endDate) {
+      const time = new Date(stage.endDate).getTime();
+      if (!isNaN(time)) {
+        if (maxTime === null || time > maxTime) maxTime = time;
+      }
     }
   });
-  this.totalDuration = Math.round(total);
+
+  if (minTime === null) {
+    this.totalDuration = 0;
+    this.currentDay = 0;
+    return 0;
+  }
+
+  const DAY = 1000 * 60 * 60 * 24;
+
+  const start = new Date(minTime);
+  const startMillis = Date.UTC(
+    start.getUTCFullYear(),
+    start.getUTCMonth(),
+    start.getUTCDate()
+  );
+
+  const now = new Date();
+  const todayMillis = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate()
+  );
+
+  // ✅ TOTAL DURATION (Inclusive)
+  if (maxTime !== null) {
+    const end = new Date(maxTime);
+    const endMillis = Date.UTC(
+      end.getUTCFullYear(),
+      end.getUTCMonth(),
+      end.getUTCDate()
+    );
+
+    const diffDays = Math.floor((endMillis - startMillis) / DAY);
+    this.totalDuration = diffDays + 1; // ✅ Inclusive
+  } else {
+    this.totalDuration = 1;
+  }
+
+  // ✅ CURRENT DAY
+  if (todayMillis < startMillis) {
+    this.currentDay = 0; // Not started yet
+  } else {
+    const elapsedDays = Math.floor((todayMillis - startMillis) / DAY) + 1;
+    this.currentDay = Math.min(elapsedDays, this.totalDuration);
+  }
+
+  // If journey completed → lock currentDay
+  if (this.status === "completed") {
+    this.currentDay = this.totalDuration;
+  }
+
   return this.totalDuration;
 };
 
-// Method to calculate progress percentage
-serviceJourneySchema.methods.getProgressPercentage = function () {
-  if (this.stages.length === 0) return 0;
-  const completedStages = this.stages.filter(
-    (s) => s.status === "completed"
-  ).length;
-  return Math.round((completedStages / this.stages.length) * 100);
-};
+// Pre-save hook to ensure duration and progress are always recalculated
+serviceJourneySchema.pre("save", function () {
+  this.calculateTotalDuration();
+});
 
 export default mongoose.model("ServiceJourney", serviceJourneySchema);

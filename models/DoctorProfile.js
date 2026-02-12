@@ -31,7 +31,10 @@ const doctorProfileSchema = new mongoose.Schema(
     experience: Number,
     qualifications: String,
     licenseNumber: String,
-    bio: String,
+    designation: String,
+    consultationFee: Number,
+    about: String,
+    bio: String, // Keeping bio for compatibility, but 'about' will be used more extensively
 
     profileCompleted: {
       type: Boolean,

@@ -49,6 +49,10 @@ const enquirySchema = new mongoose.Schema(
             ref: "User",
         },
 
+        consultationDate: {
+            type: Date,
+        },
+
         status: {
             type: String,
             enum: ["new", "assigned", "contacted", "in-service", "completed", "closed"],

@@ -37,7 +37,7 @@ export const updateDoctorProfile = async (req, res) => {
     }
 
 
-    const { experience, qualifications, licenseNumber, bio } = req.body;
+    const { experience, qualifications, licenseNumber, bio, about, designation, consultationFee } = req.body;
 
     const profile = await DoctorProfile.findOneAndUpdate(
       { userId: req.user.id },
@@ -46,6 +46,9 @@ export const updateDoctorProfile = async (req, res) => {
         qualifications,
         licenseNumber,
         bio,
+        about,
+        designation,
+        consultationFee,
         profileCompleted: true,
       },
       { new: true, upsert: true }

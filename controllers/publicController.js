@@ -21,6 +21,7 @@ export const verifyOtpAndCreateEnquiry = async (req, res) => {
             city,
             medicalProblem,
             ageOrDob,
+            consultationDate,
         } = req.body;
 
         if (otp !== "123") {
@@ -30,7 +31,7 @@ export const verifyOtpAndCreateEnquiry = async (req, res) => {
         const enquiryData = {
             patientName,
             phone,
-            contactMode,
+            contactMode: contactMode || "call",
             otpVerified: true,
             source: source || "services",
         };
@@ -45,6 +46,7 @@ export const verifyOtpAndCreateEnquiry = async (req, res) => {
         if (city) enquiryData.city = city;
         if (medicalProblem) enquiryData.medicalProblem = medicalProblem;
         if (ageOrDob) enquiryData.ageOrDob = ageOrDob;
+        if (consultationDate) enquiryData.consultationDate = consultationDate;
 
         const enquiry = await Enquiry.create(enquiryData);
 
@@ -151,13 +153,31 @@ export const getPublicDoctorsBySurgery = async (req, res) => {
             return res.status(404).json({ message: "Surgery not found" });
         }
 
-        const doctors = await User.find({
+        const doctorUsers = await User.find({
             _id: { $in: surgery.assignedDoctors },
             role: "doctor",
             active: true,
-        }).select("_id name email");
+        }).select("_id name email").lean();
 
-        res.json({ doctors });
+        const doctorIds = doctorUsers.map(d => d._id);
+        const profiles = await DoctorProfile.find({
+            userId: { $in: doctorIds }
+        }).lean();
+
+        const enrichedDoctors = doctorUsers.map(doc => {
+            const profile = profiles.find(p => p.userId.toString() === doc._id.toString());
+            return {
+                ...doc,
+                designation: profile?.designation || "Specialist Surgeon",
+                about: profile?.about || "",
+                experience: profile?.experience || 0,
+                consultationFee: profile?.consultationFee || 0,
+                qualifications: profile?.qualifications || "",
+                specializations: profile?.specializations || []
+            };
+        });
+
+        res.json({ doctors: enrichedDoctors });
     } catch (err) {
         console.error("Fetch surgery doctors error:", err);
         res.status(500).json({ message: "Failed to fetch doctors" });

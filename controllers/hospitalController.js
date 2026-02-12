@@ -15,7 +15,18 @@ export const addDoctor = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const { name, email, password, specializations = [] } = req.body;
+    const {
+      name,
+      email,
+      password,
+      specializations = [],
+      designation = "",
+      experience = 0,
+      consultationFee = 0,
+      about = "",
+      qualifications = "",
+      licenseNumber = ""
+    } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -56,6 +67,12 @@ export const addDoctor = async (req, res) => {
       userId: doctor._id,
       hospitalId: req.user.id,
       specializations,
+      designation,
+      experience,
+      consultationFee,
+      about,
+      qualifications,
+      licenseNumber,
       profileCompleted: false,
     });
 
@@ -100,6 +117,13 @@ export const listDoctors = async (req, res) => {
         email: p.userId.email || "",
         active: p.userId.active ?? true,
         specializations: (p.specializations || []).map(s => s.name || s),
+        specializationIds: (p.specializations || []).map(s => s._id || s),
+        designation: p.designation || "",
+        experience: p.experience || 0,
+        consultationFee: p.consultationFee || 0,
+        about: p.about || "",
+        qualifications: p.qualifications || "",
+        licenseNumber: p.licenseNumber || "",
         profileCompleted: !!p.profileCompleted,
       }));
 
@@ -146,6 +170,71 @@ export const toggleDoctorStatus = async (req, res) => {
     });
   } catch (err) {
     console.error("Toggle doctor error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+/* =====================================================
+   UPDATE DOCTOR PROFILE BY HOSPITAL
+   PUT /api/hospital/doctors/:id/profile
+===================================================== */
+export const updateDoctorProfileByHospital = async (req, res) => {
+  try {
+    if (req.user.role !== "hospital") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const doctorId = req.params.id;
+    const {
+      name,
+      designation,
+      experience,
+      consultationFee,
+      about,
+      qualifications,
+      licenseNumber,
+      specializations
+    } = req.body;
+
+    // 1. Update User (Name)
+    const user = await User.findOneAndUpdate(
+      { _id: doctorId, role: "doctor" },
+      { name },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "Doctor user not found" });
+    }
+
+    // 2. Update DoctorProfile
+    const profile = await DoctorProfile.findOneAndUpdate(
+      { userId: doctorId, hospitalId: req.user.id },
+      {
+        designation,
+        experience,
+        consultationFee,
+        about,
+        qualifications,
+        licenseNumber,
+        specializations
+      },
+      { new: true }
+    );
+
+    if (!profile) {
+      return res.status(404).json({ message: "Doctor profile not found" });
+    }
+
+    res.json({
+      message: "Doctor profile updated successfully",
+      doctor: {
+        ...user.toObject(),
+        profile
+      }
+    });
+  } catch (err) {
+    console.error("Update doctor profile by hospital error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

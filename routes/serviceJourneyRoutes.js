@@ -1,5 +1,6 @@
 import express from "express";
 import { verifyToken, authorizeRoles } from "../middleware/authMiddleware.js";
+import upload from "../middleware/uploadMiddleware.js";
 import {
     startService,
     getAssignedJourneys,
@@ -10,6 +11,8 @@ import {
     reorderStages,
     updateJourneyStatus,
     getPatientJourney,
+    addMedicalRecord,
+    getJourneyRecords,
 } from "../controllers/serviceJourneyController.js";
 
 const router = express.Router();
@@ -38,5 +41,9 @@ router.patch("/journeys/:journeyId/reorder", reorderStages);
 
 // Update journey status
 router.patch("/journeys/:journeyId/status", updateJourneyStatus);
+
+// Medical Records management
+router.post("/journeys/:journeyId/records", upload.single("file"), addMedicalRecord);
+router.get("/journeys/:journeyId/records", getJourneyRecords);
 
 export default router;

@@ -3,7 +3,7 @@ import Enquiry from "../models/Enquiry.js";
 import User from "../models/User.js";
 import PatientProfile from "../models/PatientProfile.js";
 import bcrypt from "bcryptjs";
-
+import MedicalRecord from "../models/MedicalRecord.js";
 /* =====================================================
    START SERVICE - Create Journey from Enquiry
    POST /api/assistant/enquiries/:enquiryId/start-service
@@ -65,6 +65,10 @@ export const startService = async (req, res) => {
             });
         }
 
+        if (!patientUser || !patientUser._id) {
+            throw new Error("Failed to resolve patient account");
+        }
+
         // Create new service journey
         const journey = await ServiceJourney.create({
             enquiryId: enquiryId,
@@ -89,7 +93,12 @@ export const startService = async (req, res) => {
         });
     } catch (error) {
         console.error("Start service error:", error);
-        res.status(500).json({ message: "Failed to start service" });
+        res.status(500).json({
+            message: "Failed to start service",
+            error: error.message,
+            stack: error.stack,
+            enquiryId: req.params.enquiryId
+        });
     }
 };
 
@@ -106,16 +115,17 @@ export const getAssignedJourneys = async (req, res) => {
             .populate("enquiryId", "patientName phone")
             .sort({ createdAt: -1 });
 
-        // Add progress percentage to each journey
-        const journeysWithProgress = journeys.map((j) => ({
-            ...j.toObject(),
-            progressPercentage: j.getProgressPercentage(),
-        }));
+        // Add progress percentage to each journey (now automatic via virtuals)
+        const journeysWithProgress = journeys.map((j) => j.toJSON({ virtuals: true }));
 
         res.json(journeysWithProgress);
     } catch (error) {
         console.error("Get journeys error:", error);
-        res.status(500).json({ message: "Failed to fetch journeys" });
+        res.status(500).json({
+            message: "Failed to fetch journeys",
+            error: error.message,
+            stack: error.stack
+        });
     }
 };
 
@@ -138,13 +148,14 @@ export const getJourneyById = async (req, res) => {
                 .json({ message: "Journey not found or not assigned to you" });
         }
 
-        res.json({
-            ...journey.toObject(),
-            progressPercentage: journey.getProgressPercentage(),
-        });
+        res.json(journey.toJSON({ virtuals: true }));
     } catch (error) {
         console.error("Get journey error:", error);
-        res.status(500).json({ message: "Failed to fetch journey" });
+        res.status(500).json({
+            message: "Failed to fetch journey",
+            error: error.message,
+            stack: error.stack
+        });
     }
 };
 
@@ -168,12 +179,43 @@ export const addStage = async (req, res) => {
                 .json({ message: "Journey not found or not assigned to you" });
         }
 
-        // Auto-assign order based on current stages length
+        const allowedFields = [
+            "title",
+            "description",
+            "status",
+            "startDate",
+            "endDate",
+            "notes",
+            "durationHours",
+            "flightDetails",
+        ];
+
         const newStage = {
-            ...stageData,
             order: journey.stages.length + 1,
-            status: stageData.status || "pending",
         };
+
+        allowedFields.forEach((key) => {
+            let value = stageData[key];
+
+            if (value === "") {
+                const stagesSchema = ServiceJourney.schema.path("stages").schema;
+                const fieldSchema = stagesSchema.path(key);
+                if (fieldSchema && (fieldSchema.instance === "Date" || fieldSchema.instance === "Number")) {
+                    value = null;
+                }
+            }
+
+            if (value !== undefined) {
+                if (key === "flightDetails" && typeof value === "object" && value !== null) {
+                    const fd = { ...value };
+                    if (fd.departureTime === "") fd.departureTime = null;
+                    if (fd.arrivalTime === "") fd.arrivalTime = null;
+                    newStage.flightDetails = fd;
+                } else {
+                    newStage[key] = value;
+                }
+            }
+        });
 
         journey.stages.push(newStage);
         journey.calculateTotalDuration();
@@ -181,18 +223,22 @@ export const addStage = async (req, res) => {
 
         res.status(201).json({
             message: "Stage added successfully",
-            journey,
+            journey: journey.toJSON({ virtuals: true }),
         });
     } catch (error) {
         console.error("Add stage error:", error);
-        res.status(500).json({ message: "Failed to add stage" });
+        const details = error.name === "ValidationError"
+            ? Object.values(error.errors).map(e => e.message).join(", ")
+            : error.message;
+
+        res.status(500).json({
+            message: "Failed to add stage",
+            error: details,
+            stack: error.stack
+        });
     }
 };
 
-/* =====================================================
-   UPDATE STAGE
-   PUT /api/assistant/journeys/:journeyId/stages/:stageId
-===================================================== */
 export const updateStage = async (req, res) => {
     try {
         const { journeyId, stageId } = req.params;
@@ -214,10 +260,37 @@ export const updateStage = async (req, res) => {
             return res.status(404).json({ message: "Stage not found" });
         }
 
-        // Update stage fields
-        Object.keys(updateData).forEach((key) => {
-            if (key !== "_id" && key !== "order") {
-                stage[key] = updateData[key];
+        const allowedFields = [
+            "title",
+            "description",
+            "status",
+            "startDate",
+            "endDate",
+            "notes",
+            "durationHours",
+            "flightDetails",
+        ];
+
+        allowedFields.forEach((key) => {
+            let value = updateData[key];
+
+            if (value === "") {
+                const stagesSchema = ServiceJourney.schema.path("stages").schema;
+                const fieldSchema = stagesSchema.path(key);
+                if (fieldSchema && (fieldSchema.instance === "Date" || fieldSchema.instance === "Number")) {
+                    value = null;
+                }
+            }
+
+            if (value !== undefined) {
+                if (key === "flightDetails" && typeof value === "object" && value !== null) {
+                    const fd = { ...value };
+                    if (fd.departureTime === "") fd.departureTime = null;
+                    if (fd.arrivalTime === "") fd.arrivalTime = null;
+                    stage.flightDetails = { ...stage.flightDetails, ...fd };
+                } else {
+                    stage[key] = value;
+                }
             }
         });
 
@@ -226,11 +299,19 @@ export const updateStage = async (req, res) => {
 
         res.json({
             message: "Stage updated successfully",
-            journey,
+            journey: journey.toJSON({ virtuals: true }),
         });
     } catch (error) {
         console.error("Update stage error:", error);
-        res.status(500).json({ message: "Failed to update stage" });
+        const details = error.name === "ValidationError"
+            ? Object.values(error.errors).map(e => e.message).join(", ")
+            : error.message;
+
+        res.status(500).json({
+            message: "Failed to update stage",
+            error: details,
+            stack: error.stack
+        });
     }
 };
 
@@ -376,12 +457,79 @@ export const getPatientJourney = async (req, res) => {
         const enquiry = await Enquiry.findById(journey.enquiryId);
 
         res.json({
-            ...journey.toObject(),
-            progressPercentage: journey.getProgressPercentage(),
+            ...journey.toJSON({ virtuals: true }),
             patientName: enquiry?.patientName,
         });
     } catch (error) {
         console.error("Get patient journey error:", error);
-        res.status(500).json({ message: "Failed to fetch journey" });
+        res.status(500).json({
+            message: "Failed to fetch journey",
+            error: error.message,
+            stack: error.stack
+        });
+    }
+};
+export const addMedicalRecord = async (req, res) => {
+    try {
+        const { journeyId } = req.params;
+        const { date, description } = req.body;
+        const file = req.file;
+
+        if (!file) {
+            return res.status(400).json({ message: "No file uploaded" });
+        }
+
+        const journey = await ServiceJourney.findOne({
+            _id: journeyId,
+            assignedPA: req.user.id,
+        });
+
+        if (!journey) {
+            return res.status(404).json({ message: "Journey not found or not assigned to you" });
+        }
+
+        const record = await MedicalRecord.create({
+            journeyId,
+            date,
+            description,
+            fileUrl: file.path,
+            fileName: file.originalname,
+            uploadedBy: req.user.id,
+        });
+
+        res.status(201).json({
+            message: "Medical record added successfully",
+            record,
+        });
+    } catch (error) {
+        console.error("Add medical record error:", error);
+        res.status(500).json({ message: "Failed to add medical record" });
+    }
+};
+
+/* =====================================================
+   GET JOURNEY RECORDS
+   GET /api/assistant/journeys/:journeyId/records
+   GET /api/patient/my-journey/records
+===================================================== */
+export const getJourneyRecords = async (req, res) => {
+    try {
+        const { journeyId } = req.params;
+        let query = { journeyId };
+
+        // If patient is requesting, find their journey first
+        if (req.user.role === "patient") {
+            const journey = await ServiceJourney.findOne({ patientId: req.user.id });
+            if (!journey) {
+                return res.status(404).json({ message: "No active journey found" });
+            }
+            query.journeyId = journey._id;
+        }
+
+        const records = await MedicalRecord.find(query).sort({ date: -1 });
+        res.json(records);
+    } catch (error) {
+        console.error("Get medical records error:", error);
+        res.status(500).json({ message: "Failed to fetch medical records" });
     }
 };

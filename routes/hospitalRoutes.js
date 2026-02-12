@@ -18,6 +18,7 @@ import {
   assignDoctorToSurgery,
   getSurgeriesByDoctor,
   updateDoctorSurgeries,
+  updateDoctorProfileByHospital,
 } from "../controllers/hospitalController.js";
 import attachUserContext from "../middleware/attachUserContext.js";
 
@@ -108,6 +109,13 @@ router.get(
   verifyToken,
   authorizeRoles("hospital"),
   getSurgeriesByDoctor
+);
+
+router.put(
+  "/doctors/:id/profile",
+  verifyToken,
+  authorizeRoles("hospital"),
+  updateDoctorProfileByHospital
 );
 
 
