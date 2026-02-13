@@ -40,6 +40,17 @@ const doctorProfileSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    profilePhoto: {
+      data: Buffer,
+      contentType: String,
+      hash: String,
+      size: Number,
+      uploadedAt: {
+        type: Date,
+        default: Date.now,
+      },
+    },
   },
   { timestamps: true }
 );

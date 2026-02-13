@@ -173,7 +173,8 @@ export const getPublicDoctorsBySurgery = async (req, res) => {
                 experience: profile?.experience || 0,
                 consultationFee: profile?.consultationFee || 0,
                 qualifications: profile?.qualifications || "",
-                specializations: profile?.specializations || []
+                specializations: profile?.specializations || [],
+                hasPhoto: !!profile?.profilePhoto?.data
             };
         });
 
@@ -229,7 +230,7 @@ export const globalSearch = async (req, res) => {
             userId: { $in: doctorIds }
         })
             .populate("hospitalId", "name")
-            .select("userId hospitalId specializations")
+            .select("userId hospitalId specializations profilePhoto")
             .lean();
 
         // Enrich doctor data with profile info
@@ -240,7 +241,8 @@ export const globalSearch = async (req, res) => {
                 name: doc.name,
                 email: doc.email,
                 hospitalId: profile?.hospitalId?._id,
-                hospitalName: profile?.hospitalId?.name
+                hospitalName: profile?.hospitalId?.name,
+                hasPhoto: !!profile?.profilePhoto?.data
             };
         });
 

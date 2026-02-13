@@ -355,14 +355,31 @@ export const toggleSpecialty = async (req, res) => {
 
 export const getAllEnquiries = async (req, res) => {
   try {
-    const enquiries = await Enquiry.find()
-      .sort({ createdAt: -1 })
-      .populate("specialtyId", "name")
-      .populate("surgeryId", "surgeryName")
-      .populate("doctorId", "name")
-      .populate("assignedPA", "name");
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = (page - 1) * limit;
 
-    res.json(enquiries);
+    const [enquiries, total] = await Promise.all([
+      Enquiry.find()
+        .sort({ createdAt: -1 })
+        .populate("specialtyId", "name")
+        .populate("surgeryId", "surgeryName")
+        .populate("doctorId", "name")
+        .populate("assignedPA", "name")
+        .skip(skip)
+        .limit(limit),
+      Enquiry.countDocuments(),
+    ]);
+
+    res.json({
+      enquiries,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error("Fetch enquiries error:", error);
     res.status(500).json({ message: "Failed to fetch enquiries" });

@@ -19,8 +19,10 @@ import {
   getSurgeriesByDoctor,
   updateDoctorSurgeries,
   updateDoctorProfileByHospital,
+  uploadDoctorPhoto,
 } from "../controllers/hospitalController.js";
 import attachUserContext from "../middleware/attachUserContext.js";
+import profileUpload from "../middleware/profileUpload.js";
 
 
 const router = express.Router();
@@ -116,6 +118,14 @@ router.put(
   verifyToken,
   authorizeRoles("hospital"),
   updateDoctorProfileByHospital
+);
+
+router.post(
+  "/doctors/:id/photo",
+  verifyToken,
+  authorizeRoles("hospital"),
+  profileUpload.single("photo"),
+  uploadDoctorPhoto
 );
 
 

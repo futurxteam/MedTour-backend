@@ -9,8 +9,11 @@ import {
     getCountries,
     getCities
 } from "../controllers/publicController.js";
+import { getDoctorPhoto } from "../controllers/hospitalController.js";
 
 const router = express.Router();
+
+router.get("/doctor/:id/photo", getDoctorPhoto);
 
 router.get("/surgeries-menu", getSurgeriesMenu);
 router.get(

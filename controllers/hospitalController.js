@@ -5,6 +5,7 @@ import Surgery from "../models/Surgery.js";
 import DoctorProfile from "../models/DoctorProfile.js";
 import HospitalProfile from "../models/HospitalProfile.js";
 import Specialty from "../models/Speciality.js";
+import { processProfilePhoto } from "../utils/imageProcessor.js";
 
 /* =====================================================
    ADD DOCTOR
@@ -125,6 +126,7 @@ export const listDoctors = async (req, res) => {
         qualifications: p.qualifications || "",
         licenseNumber: p.licenseNumber || "",
         profileCompleted: !!p.profileCompleted,
+        hasPhoto: !!p.profilePhoto?.data,
       }));
 
     res.json(formattedDoctors);
@@ -611,5 +613,79 @@ export const updateDoctorSurgeries = async (req, res) => {
   } catch (err) {
     console.error("Update doctor surgeries error:", err);
     res.status(500).json({ message: "Failed to update assignments", error: err.message });
+  }
+};
+
+/* =====================================================
+   UPLOAD DOCTOR PHOTO
+   POST /api/hospital/doctors/:id/photo
+===================================================== */
+export const uploadDoctorPhoto = async (req, res) => {
+  try {
+    if (req.user.role !== "hospital") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const doctorId = req.params.id;
+    const profile = await DoctorProfile.findOne({
+      userId: doctorId,
+      hospitalId: req.user.id,
+    });
+
+    if (!profile) {
+      return res.status(404).json({ message: "Doctor profile not found" });
+    }
+
+    // Process image
+    const processed = await processProfilePhoto(req.file.buffer);
+
+    // Update profile with binary data
+    profile.profilePhoto = {
+      data: processed.data,
+      contentType: processed.contentType,
+      hash: processed.hash,
+      size: processed.size,
+      uploadedAt: new Date(),
+    };
+
+    await profile.save();
+
+    res.json({
+      message: "Profile photo uploaded successfully",
+      hash: processed.hash,
+    });
+  } catch (err) {
+    console.error("Upload photo error:", err);
+    res.status(500).json({ message: "Failed to upload photo" });
+  }
+};
+
+/* =====================================================
+   GET DOCTOR PHOTO (SERVE BINARY)
+   GET /api/hospital/doctors/:id/photo
+===================================================== */
+export const getDoctorPhoto = async (req, res) => {
+  try {
+    const doctorId = req.params.id;
+    const profile = await DoctorProfile.findOne({ userId: doctorId }).select("profilePhoto");
+
+    if (!profile || !profile.profilePhoto || !profile.profilePhoto.data) {
+      // Return a default placeholder or 404
+      return res.status(404).json({ message: "Photo not found" });
+    }
+
+    // Set headers for caching and content type
+    res.set("Content-Type", profile.profilePhoto.contentType);
+    res.set("Cache-Control", "public, max-age=86400"); // Cache for 24h
+    res.set("ETag", profile.profilePhoto.hash);
+
+    res.send(profile.profilePhoto.data);
+  } catch (err) {
+    console.error("Get photo error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 };
