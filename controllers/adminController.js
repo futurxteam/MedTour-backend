@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import HospitalProfile from "../models/HospitalProfile.js";
 import Specialty from "../models/Speciality.js";
 import Enquiry from "../models/Enquiry.js";
+import GlobalSurgery from "../models/GlobalSurgery.js";
 
 
 /* =====================================================
@@ -415,4 +416,75 @@ export const updateEnquiryStatus = async (req, res) => {
 
   await Enquiry.findByIdAndUpdate(req.params.id, { status });
   res.json({ message: "Status updated" });
+};
+
+/* =====================================================
+   GLOBAL SURGERY REGISTRY
+===================================================== */
+export const listGlobalSurgeries = async (req, res) => {
+  try {
+    const surgeries = await GlobalSurgery.find()
+      .populate("specialization", "name")
+      .sort({ surgeryName: 1 });
+    res.json(surgeries);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch global surgeries" });
+  }
+};
+
+export const addGlobalSurgery = async (req, res) => {
+  try {
+    const { surgeryName, specialization, description, duration, minimumCost } = req.body;
+
+    if (!surgeryName || !specialization || !minimumCost) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    const exists = await GlobalSurgery.findOne({ surgeryName: { $regex: new RegExp(`^${surgeryName}$`, "i") } });
+    if (exists) {
+      return res.status(409).json({ message: "Surgery name already exists" });
+    }
+
+    const surgery = await GlobalSurgery.create({
+      surgeryName,
+      specialization,
+      description,
+      duration,
+      minimumCost,
+    });
+
+    res.status(201).json(surgery);
+  } catch (error) {
+    console.error("Add global surgery error:", error);
+    res.status(500).json({ message: "Failed to add global surgery" });
+  }
+};
+
+export const toggleGlobalSurgeryStatus = async (req, res) => {
+  try {
+    const surgery = await GlobalSurgery.findById(req.params.id);
+    if (!surgery) return res.status(404).json({ message: "Surgery not found" });
+
+    surgery.active = !surgery.active;
+    await surgery.save();
+    res.json({ active: surgery.active });
+  } catch (error) {
+    res.status(500).json({ message: "Status update failed" });
+  }
+};
+
+export const updateGlobalSurgery = async (req, res) => {
+  try {
+    const { surgeryName, specialization, description, duration, minimumCost, active } = req.body;
+    const surgery = await GlobalSurgery.findByIdAndUpdate(
+      req.params.id,
+      { surgeryName, specialization, description, duration, minimumCost, active },
+      { new: true }
+    );
+
+    if (!surgery) return res.status(404).json({ message: "Surgery not found" });
+    res.json(surgery);
+  } catch (error) {
+    res.status(500).json({ message: "Update failed" });
+  }
 };

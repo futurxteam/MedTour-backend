@@ -24,13 +24,21 @@ const PORT = process.env.PORT || 5000;
 /* =========================
    MongoDB Connection
 ========================= */
-mongoose
-   .connect(process.env.MONGO_URI)
-   .then(() => console.log("✅ MongoDB connected"))
-   .catch((err) => {
-      console.error("MongoDB connection failed:", err.message);
+mongoose.set("strictQuery", false);
+// Disable buffering so that queries fail fast if not connected
+mongoose.set("bufferCommands", false);
+
+const connectDB = async () => {
+   try {
+      await mongoose.connect(process.env.MONGO_URI, {
+         serverSelectionTimeoutMS: 5000,
+      });
+      console.log("✅ MongoDB connected");
+   } catch (err) {
+      console.error("❌ MongoDB connection failed:", err.message);
       process.exit(1);
-   });
+   }
+};
 
 /* =========================
    Middleware
@@ -62,6 +70,11 @@ app.get("/", (req, res) => {
 /* =========================
    Start Server
 ========================= */
-app.listen(PORT, () => {
-   console.log(`🚀 Server running on port ${PORT}`);
-});
+const startServer = async () => {
+   await connectDB();
+   app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+   });
+};
+
+startServer();

@@ -17,6 +17,10 @@ const countrySchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        phoneCode: {
+            type: String,
+            required: true,
+        },
     },
     { timestamps: true }
 );

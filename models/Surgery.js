@@ -9,17 +9,18 @@ const surgerySchema = new mongoose.Schema(
       index: true,
     },
 
+    globalSurgeryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "GlobalSurgery",
+      required: true,
+      index: true,
+    },
+
     specialization: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Specialty",
       required: true,
-      index: true
-    },
-
-    surgeryName: {
-      type: String,
-      required: true,
-      trim: true,
+      index: true,
     },
 
     description: {
@@ -28,7 +29,7 @@ const surgerySchema = new mongoose.Schema(
     },
 
     duration: {
-      type: String, // e.g. "2–3 hours"
+      type: String,
       required: true,
     },
 

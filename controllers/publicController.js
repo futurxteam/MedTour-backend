@@ -298,7 +298,7 @@ export const globalSearch = async (req, res) => {
 export const getCountries = async (req, res) => {
     try {
         const countries = await Country.find()
-            .select("name code hasCities")
+            .select("name code hasCities phoneCode")
             .sort({ name: 1 })
             .lean();
 

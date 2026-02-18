@@ -5,6 +5,7 @@ import Surgery from "../models/Surgery.js";
 import DoctorProfile from "../models/DoctorProfile.js";
 import HospitalProfile from "../models/HospitalProfile.js";
 import Specialty from "../models/Speciality.js";
+import GlobalSurgery from "../models/GlobalSurgery.js";
 import { processProfilePhoto } from "../utils/imageProcessor.js";
 
 /* =====================================================
@@ -272,8 +273,7 @@ export const addSurgery = async (req, res) => {
     const hospitalUserId = req.user.id;
 
     const {
-      specializationId,
-      surgeryName,
+      globalSurgeryId,
       description,
       duration,
       cost,
@@ -290,10 +290,17 @@ export const addSurgery = async (req, res) => {
       return res.status(403).json({ message: "Hospital not approved" });
     }
 
-    // Validate specialty
-    const validSpecialty = await Specialty.findById(specializationId);
-    if (!validSpecialty || !validSpecialty.active) {
-      return res.status(400).json({ message: "Invalid specialization" });
+    // Validate Global Surgery
+    const globalSurgery = await GlobalSurgery.findById(globalSurgeryId);
+    if (!globalSurgery || !globalSurgery.active) {
+      return res.status(400).json({ message: "Invalid or inactive global surgery" });
+    }
+
+    // Enforce minimum cost
+    if (cost < globalSurgery.minimumCost) {
+      return res.status(400).json({
+        message: `Hospital cost cannot be less than the global minimum cost (₹${globalSurgery.minimumCost})`
+      });
     }
 
     // Validate assigned doctors belong to hospital
@@ -312,10 +319,10 @@ export const addSurgery = async (req, res) => {
 
     const surgery = await Surgery.create({
       hospitalId: hospitalUserId,
-      specialization: validSpecialty._id,
-      surgeryName,
-      description,
-      duration,
+      globalSurgeryId: globalSurgery._id,
+      specialization: globalSurgery.specialization,
+      description: description || globalSurgery.description,
+      duration: duration || globalSurgery.duration,
       cost,
       assignedDoctors,
       active: true,
@@ -344,6 +351,7 @@ export const listSurgeries = async (req, res) => {
     const surgeries = await Surgery.find({
       hospitalId: hospitalUserId,
     })
+      .populate("globalSurgeryId", "surgeryName")
       .populate("specialization", "name")
       .populate("assignedDoctors", "name email")
       .sort({ createdAt: -1 });
@@ -613,6 +621,24 @@ export const updateDoctorSurgeries = async (req, res) => {
   } catch (err) {
     console.error("Update doctor surgeries error:", err);
     res.status(500).json({ message: "Failed to update assignments", error: err.message });
+  }
+};
+
+/* =====================================================
+   GET AVAILABLE GLOBAL SURGERIES (FOR DROPDOWN)
+===================================================== */
+export const getAvailableGlobalSurgeries = async (req, res) => {
+  try {
+    const { specializationId } = req.query;
+    const query = { active: true };
+    if (specializationId) query.specialization = specializationId;
+
+    const globals = await GlobalSurgery.find(query)
+      .populate("specialization", "name")
+      .sort({ surgeryName: 1 });
+    res.json(globals);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch master registry" });
   }
 };
 

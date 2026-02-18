@@ -20,6 +20,7 @@ import {
   updateDoctorSurgeries,
   updateDoctorProfileByHospital,
   uploadDoctorPhoto,
+  getAvailableGlobalSurgeries,
 } from "../controllers/hospitalController.js";
 import attachUserContext from "../middleware/attachUserContext.js";
 import profileUpload from "../middleware/profileUpload.js";
@@ -73,6 +74,13 @@ router.get(
   verifyToken,
   authorizeRoles("hospital"),
   listSurgeries
+);
+
+router.get(
+  "/global-registry",
+  verifyToken,
+  authorizeRoles("hospital"),
+  getAvailableGlobalSurgeries
 );
 
 router.get(
