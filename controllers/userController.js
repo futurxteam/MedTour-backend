@@ -25,14 +25,13 @@ export const getCurrentUser = async (req, res) => {
     }
 
     console.log("User found:", user?.email);
-    console.log("Profile completed:", profile?.profileCompleted);
 
     res.status(200).json({
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
-      profileCompleted: profile?.profileCompleted || false,
+      profileCompleted: user.role === "hospital" ? true : (profile?.profileCompleted || false),
       profile,
     });
   } catch (error) {

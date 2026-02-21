@@ -64,6 +64,19 @@ const enquirySchema = new mongoose.Schema(
             ref: "User",
             default: null,
         },
+
+        // ── Service Packages ─────────────────────────────
+        servicePackages: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "ServicePackage",
+            },
+        ],
+
+        packageNotes: {
+            type: String,
+            default: "",
+        },
     },
     { timestamps: true }
 );

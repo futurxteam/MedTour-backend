@@ -21,9 +21,12 @@ import {
   updateDoctorProfileByHospital,
   uploadDoctorPhoto,
   getAvailableGlobalSurgeries,
+  uploadHospitalPhotos,
+  removeHospitalPhoto,
 } from "../controllers/hospitalController.js";
 import attachUserContext from "../middleware/attachUserContext.js";
 import profileUpload from "../middleware/profileUpload.js";
+import upload from "../middleware/uploadMiddleware.js";
 
 
 const router = express.Router();
@@ -31,7 +34,7 @@ const router = express.Router();
 router.get(
   "/specializations",
   verifyToken,
-  authorizeRoles("hospital"),
+  authorizeRoles("hospital", "admin"),
   getHospitalSpecializations
 );
 
@@ -136,5 +139,21 @@ router.post(
   uploadDoctorPhoto
 );
 
+
+// Photos (Cloudinary)
+router.post(
+  "/photos",
+  verifyToken,
+  authorizeRoles("hospital"),
+  upload.array("photos", 5), // Allow up to 5 photos
+  uploadHospitalPhotos
+);
+
+router.delete(
+  "/photos/:publicId",
+  verifyToken,
+  authorizeRoles("hospital"),
+  removeHospitalPhoto
+);
 
 export default router;

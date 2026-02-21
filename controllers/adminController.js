@@ -4,6 +4,7 @@ import HospitalProfile from "../models/HospitalProfile.js";
 import Specialty from "../models/Speciality.js";
 import Enquiry from "../models/Enquiry.js";
 import GlobalSurgery from "../models/GlobalSurgery.js";
+import ServicePackage from "../models/ServicePackage.js";
 
 
 /* =====================================================
@@ -486,5 +487,75 @@ export const updateGlobalSurgery = async (req, res) => {
     res.json(surgery);
   } catch (error) {
     res.status(500).json({ message: "Update failed" });
+  }
+};
+
+/* =====================================================
+   SERVICE PACKAGES – ADMIN
+===================================================== */
+
+export const createServicePackage = async (req, res) => {
+  try {
+    const { name, type, language, place, description, price, currency } = req.body;
+
+    if (!name || !type || price === undefined) {
+      return res.status(400).json({ message: "name, type, and price are required" });
+    }
+
+    if (!["translator", "tourism"].includes(type)) {
+      return res.status(400).json({ message: "type must be 'translator' or 'tourism'" });
+    }
+
+    if (type === "translator") {
+      if (!language || !["english", "arabic"].includes(language)) {
+        return res.status(400).json({
+          message: "Translator packages require a valid language (english | arabic)",
+        });
+      }
+    }
+
+    if (type === "tourism") {
+      if (!place) {
+        return res.status(400).json({ message: "Tourism packages require a place name" });
+      }
+    }
+
+    const pkg = await ServicePackage.create({
+      name,
+      type,
+      language: type === "translator" ? language : undefined,
+      place: type === "tourism" ? place : undefined,
+      description,
+      price,
+      currency: currency || "USD",
+    });
+
+    res.status(201).json(pkg);
+  } catch (error) {
+    console.error("Create service package error:", error);
+    res.status(500).json({ message: "Failed to create service package" });
+  }
+};
+
+export const listServicePackages = async (req, res) => {
+  try {
+    const packages = await ServicePackage.find().sort({ createdAt: -1 });
+    res.json(packages);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch service packages" });
+  }
+};
+
+export const toggleServicePackage = async (req, res) => {
+  try {
+    const pkg = await ServicePackage.findById(req.params.id);
+    if (!pkg) return res.status(404).json({ message: "Package not found" });
+
+    pkg.active = !pkg.active;
+    await pkg.save();
+
+    res.json({ active: pkg.active });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to toggle package status" });
   }
 };

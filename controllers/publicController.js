@@ -5,6 +5,8 @@ import DoctorProfile from "../models/DoctorProfile.js";
 import HospitalProfile from "../models/HospitalProfile.js";
 import Country from "../models/Country.js";
 import City from "../models/City.js";
+import Specialty from "../models/Speciality.js";
+import GlobalSurgery from "../models/GlobalSurgery.js";
 
 export const verifyOtpAndCreateEnquiry = async (req, res) => {
     try {
@@ -84,35 +86,42 @@ export const sendEnquiryOtp = async (req, res) => {
 
 export const getSurgeriesMenu = async (req, res) => {
     try {
+        // 1. Fetch all active specializations
+        const specializations = await Specialty.find({ active: true }).sort({ name: 1 }).lean();
+
+        // 2. Fetch all active surgeries
         const surgeries = await Surgery.find({ active: true })
             .populate("specialization", "name")
             .select("surgeryName specialization")
             .lean();
 
-        const grouped = surgeries.reduce((acc, s) => {
-            if (!s.specialization?.name) return acc;
+        // 3. Initialize grouped object with all active specializations
+        // This ensures newly added specializations (with no surgeries yet) appear.
+        const grouped = {};
+        specializations.forEach(spec => {
+            grouped[spec.name] = {
+                _id: spec._id,
+                surgeries: []
+            };
+        });
+
+        // 4. Fill in the surgeries for these specializations
+        surgeries.forEach(s => {
+            if (!s.specialization?.name) return;
 
             const specName = s.specialization.name;
-            const specId = s.specialization._id;
 
-            if (!acc[specName]) {
-                acc[specName] = {
-                    _id: specId,
-                    surgeries: []
-                };
+            // Only add if it's an active specialization (already in grouped)
+            if (grouped[specName]) {
+                const alreadyExists = grouped[specName].surgeries.find(item => item.name === s.surgeryName);
+                if (!alreadyExists) {
+                    grouped[specName].surgeries.push({
+                        id: s._id,
+                        name: s.surgeryName
+                    });
+                }
             }
-
-            // Avoid duplicate surgery names in the summary list
-            const alreadyExists = acc[specName].surgeries.find(item => item.name === s.surgeryName);
-            if (!alreadyExists) {
-                acc[specName].surgeries.push({
-                    id: s._id,
-                    name: s.surgeryName
-                });
-            }
-
-            return acc;
-        }, {});
+        });
 
         res.json(grouped);
     } catch (err) {
@@ -125,13 +134,20 @@ export const getPublicSurgeriesBySpecialty = async (req, res) => {
     try {
         const { specialtyId } = req.params;
 
+        // Verify the specialization exists and is active
+        const specialty = await Specialty.findOne({ _id: specialtyId, active: true });
+        if (!specialty) {
+            return res.status(404).json({ message: "Specialization not found or inactive" });
+        }
+
         // Fetch all surgeries for this specialty
         const surgeries = await Surgery.find({
             specialization: specialtyId,
             active: true,
         })
             .populate("specialization", "name")
-            .select("_id surgeryName description duration cost specialization");
+            .populate("globalSurgeryId", "minimumCost")
+            .select("_id surgeryName description duration cost specialization globalSurgeryId");
 
         res.json({ surgeries });
     } catch (err) {
@@ -205,14 +221,23 @@ export const globalSearch = async (req, res) => {
         const searchRegex = new RegExp(q.trim(), "i"); // case-insensitive
 
         // Search Surgeries (active only)
-        const surgeries = await Surgery.find({
+        const surgeriesRaw = await Surgery.find({
             active: true,
             surgeryName: searchRegex
         })
-            .populate("specialization", "name")
+            .populate({
+                path: "specialization",
+                match: { active: true },
+                select: "name active"
+            })
             .select("_id surgeryName description duration specialization")
-            .limit(10)
+            .limit(20) // Fetch more to allow filtering
             .lean();
+
+        // Filter out surgeries with inactive or missing specialization
+        const surgeries = surgeriesRaw
+            .filter(s => s.specialization && s.specialization.active !== false)
+            .slice(0, 10);
 
         // Search Doctors (active only)
         const doctorUsers = await User.find({
@@ -330,5 +355,102 @@ export const getCities = async (req, res) => {
     } catch (err) {
         console.error("Get cities error:", err);
         res.status(500).json({ message: "Failed to fetch cities" });
+    }
+};
+
+/**
+ * GET /api/public/lowest-quotes
+ * Fetch top lowest priced surgeries
+ */
+export const getLowestQuotes = async (req, res) => {
+    try {
+        const lowestQuotes = await GlobalSurgery.find({ active: true })
+            .populate("specialization", "name")
+            .sort({ minimumCost: 1 })
+            .limit(6)
+            .lean();
+
+        res.json({ lowestQuotes });
+    } catch (err) {
+        console.error("Lowest quotes error:", err);
+        res.status(500).json({ message: "Failed to fetch lowest quotes" });
+    }
+};
+
+/**
+ * GET /api/public/common-procedures
+ * Fetch common procedures (from GlobalSurgery)
+ */
+export const getCommonProcedures = async (req, res) => {
+    try {
+        // For demo, we just return top 8 active global surgeries
+        const commonProcedures = await GlobalSurgery.find({ active: true })
+            .populate("specialization", "name")
+            .limit(8)
+            .lean();
+
+        res.json({ commonProcedures });
+    } catch (err) {
+        console.error("Common procedures error:", err);
+        res.status(500).json({ message: "Failed to fetch common procedures" });
+    }
+};
+
+/**
+ * GET /api/public/hospitals
+ * Fetch all approved hospitals
+ */
+export const getPublicHospitals = async (req, res) => {
+    try {
+        const hospitals = await HospitalProfile.find({ hospitalStatus: "approved" })
+            .populate("specialties", "name")
+            .select("hospitalName city country avatar photos specialties")
+            .lean();
+
+        res.json({ hospitals });
+    } catch (err) {
+        console.error("Get public hospitals error:", err);
+        res.status(500).json({ message: "Failed to fetch hospitals" });
+    }
+};
+
+/**
+ * GET /api/public/hospitals/:id
+ * Fetch detailed hospital info
+ */
+export const getPublicHospitalById = async (req, res) => {
+    try {
+        const hospital = await HospitalProfile.findById(req.params.id)
+            .populate("specialties", "name")
+            .populate({
+                path: "doctors",
+                populate: {
+                    path: "userId",
+                    select: "name email"
+                }
+            })
+            .lean();
+
+        if (!hospital || hospital.hospitalStatus !== "approved") {
+            return res.status(404).json({ message: "Hospital not found" });
+        }
+
+        // Clean up doctor data to only expose what's needed
+        const doctors = (hospital.doctors || []).map(p => ({
+            _id: p.userId?._id,
+            name: p.userId?.name,
+            designation: p.designation,
+            specializations: p.specializations,
+            experience: p.experience,
+            hasPhoto: !!p.profilePhoto?.data
+        }));
+
+        res.json({
+            ...hospital,
+            doctors
+        });
+    } catch (err) {
+        console.error("Get public hospital detail error:", err);
+        res.status(500).json({ message: "Failed to fetch hospital details" });
     }
 };

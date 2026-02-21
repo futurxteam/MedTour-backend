@@ -21,7 +21,12 @@ import {
   addGlobalSurgery,
   updateGlobalSurgery,
   toggleGlobalSurgeryStatus,
+  createServicePackage,
+  listServicePackages,
+  toggleServicePackage,
+
 } from "../controllers/adminController.js";
+import upload from "../middleware/uploadMiddleware.js";
 
 import { verifyToken, authorizeRoles } from "../middleware/authMiddleware.js";
 
@@ -55,5 +60,12 @@ router.get("/global-surgeries", listGlobalSurgeries);
 router.post("/global-surgeries", addGlobalSurgery);
 router.put("/global-surgeries/:id", updateGlobalSurgery);
 router.patch("/global-surgeries/:id/status", toggleGlobalSurgeryStatus);
+
+// 📦 Service Packages
+router.post("/service-packages", createServicePackage);
+router.get("/service-packages", listServicePackages);
+router.patch("/service-packages/:id/toggle", toggleServicePackage);
+
+// 🏥 Hospital Management
 
 export default router;

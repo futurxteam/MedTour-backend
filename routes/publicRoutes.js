@@ -7,7 +7,9 @@ import {
     verifyOtpAndCreateEnquiry,
     globalSearch,
     getCountries,
-    getCities
+    getCities,
+    getLowestQuotes,
+    getCommonProcedures
 } from "../controllers/publicController.js";
 import { getDoctorPhoto } from "../controllers/hospitalController.js";
 
@@ -34,5 +36,9 @@ router.get("/search", globalSearch);
 // Country and City endpoints
 router.get("/countries", getCountries);
 router.get("/cities", getCities);
+
+// New Homepage Expansion Routes
+router.get("/lowest-quotes", getLowestQuotes);
+router.get("/common-procedures", getCommonProcedures);
 
 export default router;

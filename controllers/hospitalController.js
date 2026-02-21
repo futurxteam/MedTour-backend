@@ -7,6 +7,7 @@ import HospitalProfile from "../models/HospitalProfile.js";
 import Specialty from "../models/Speciality.js";
 import GlobalSurgery from "../models/GlobalSurgery.js";
 import { processProfilePhoto } from "../utils/imageProcessor.js";
+import { v2 as cloudinary } from "cloudinary";
 
 /* =====================================================
    ADD DOCTOR
@@ -65,7 +66,7 @@ export const addDoctor = async (req, res) => {
       active: true,
     });
 
-    await DoctorProfile.create({
+    const doctorProfile = await DoctorProfile.create({
       userId: doctor._id,
       hospitalId: req.user.id,
       specializations,
@@ -75,8 +76,13 @@ export const addDoctor = async (req, res) => {
       about,
       qualifications,
       licenseNumber,
-      profileCompleted: false,
     });
+
+    // 🔗 Push doctor to HospitalProfile for bidirectional linking
+    await HospitalProfile.findOneAndUpdate(
+      { userId: req.user.id },
+      { $addToSet: { doctors: doctorProfile._id } }
+    );
 
     res.status(201).json({
       message: "Doctor added successfully",
@@ -256,8 +262,7 @@ export const getHospitalMe = async (req, res) => {
 
     res.json({
       ...user.toObject(),
-      profile,
-      profileCompleted: profile?.profileCompleted || false,
+      profile
     });
   } catch (err) {
     console.error("Get hospital me error:", err);
@@ -426,15 +431,13 @@ export const updateHospitalProfile = async (req, res) => {
         phone,
         specialties,
         avatar,
-        profileCompleted: true,
       },
       { new: true, upsert: true }
     );
 
     res.json({
       message: "Hospital profile updated",
-      profile,
-      profileCompleted: profile.profileCompleted,
+      profile
     });
   } catch (err) {
     console.error("Update hospital profile error:", err);
@@ -447,8 +450,8 @@ export const updateHospitalProfile = async (req, res) => {
 ===================================================== */
 export const getHospitalSpecializations = async (req, res) => {
   try {
-    const specializations = await Specialty.find({ active: true }, "name");
-    res.json({ specializations });
+    const specialties = await Specialty.find({ active: true }, "name");
+    res.json({ specialties });
   } catch (err) {
     console.error("Get specializations error:", err);
     res.status(500).json({ message: "Server error" });
@@ -516,17 +519,18 @@ export const getSurgeriesByDoctor = async (req, res) => {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
-    // 2. Resolve specialization IDs if they are stored as names
-    let specialtyIds = doctorProfile.specializations;
-
-    // Check if any specialization is a string that doesn't look like an ID
-    const hasNames = specialtyIds.some(s => typeof s === 'string' && s.length > 24); // Not a perfect check but helpful
-    // Actually, let's just fetch everything matching names OR IDs
+    // 2. Resolve specialization IDs safely
+    const specIds = [];
+    const specNames = [];
+    (doctorProfile.specializations || []).forEach(s => {
+      if (mongoose.Types.ObjectId.isValid(s)) specIds.push(s);
+      else specNames.push(s);
+    });
 
     const matchedSpecialties = await Specialty.find({
       $or: [
-        { _id: { $in: specialtyIds } },
-        { name: { $in: specialtyIds } }
+        { _id: { $in: specIds } },
+        { name: { $in: specNames } }
       ],
       active: true
     }).select("_id");
@@ -569,14 +573,11 @@ export const updateDoctorSurgeries = async (req, res) => {
       return res.status(404).json({ message: "Doctor not found or access denied" });
     }
 
-    // 2. Resolve specialization IDs (handling both IDs and names safely)
     const specIds = [];
     const specNames = [];
-
     (doctorProfile.specializations || []).forEach(s => {
-      const val = s?.toString() || s;
-      if (mongoose.Types.ObjectId.isValid(val)) specIds.push(val);
-      else specNames.push(val);
+      if (mongoose.Types.ObjectId.isValid(s)) specIds.push(s);
+      else specNames.push(s);
     });
 
     const matchedSpecialties = await Specialty.find({
@@ -713,5 +714,63 @@ export const getDoctorPhoto = async (req, res) => {
   } catch (err) {
     console.error("Get photo error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+/* =====================================================
+   UPLOAD HOSPITAL PHOTOS
+   POST /api/hospital/photos
+===================================================== */
+export const uploadHospitalPhotos = async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    const hospitalProfile = await HospitalProfile.findOne({ userId: req.user.id });
+    if (!hospitalProfile) return res.status(404).json({ message: "Hospital profile not found" });
+
+    const newPhotos = req.files.map(file => ({
+      url: file.path,
+      publicId: file.filename
+    }));
+
+    hospitalProfile.photos.push(...newPhotos);
+    await hospitalProfile.save();
+
+    res.json({
+      message: "Photos uploaded successfully",
+      photos: hospitalProfile.photos
+    });
+  } catch (err) {
+    console.error("Upload hospital photos error:", err);
+    res.status(500).json({ message: "Failed to upload photos" });
+  }
+};
+
+/* =====================================================
+   REMOVE HOSPITAL PHOTO
+   DELETE /api/hospital/photos/:publicId
+===================================================== */
+export const removeHospitalPhoto = async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    const hospitalProfile = await HospitalProfile.findOne({ userId: req.user.id });
+    if (!hospitalProfile) return res.status(404).json({ message: "Hospital profile not found" });
+
+    // Remove from Cloudinary
+    await cloudinary.uploader.destroy(publicId);
+
+    // Remove from DB
+    hospitalProfile.photos = hospitalProfile.photos.filter(p => p.publicId !== publicId);
+    await hospitalProfile.save();
+
+    res.json({
+      message: "Photo removed successfully",
+      photos: hospitalProfile.photos
+    });
+  } catch (err) {
+    console.error("Remove hospital photo error:", err);
+    res.status(500).json({ message: "Failed to remove photo" });
   }
 };
