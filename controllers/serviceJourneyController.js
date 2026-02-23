@@ -4,10 +4,27 @@ import User from "../models/User.js";
 import PatientProfile from "../models/PatientProfile.js";
 import bcrypt from "bcryptjs";
 import MedicalRecord from "../models/MedicalRecord.js";
-/* =====================================================
-   START SERVICE - Create Journey from Enquiry
-   POST /api/assistant/enquiries/:enquiryId/start-service
-===================================================== */
+
+import Country from "../models/Country.js";
+
+const stripCountryCode = async (phone) => {
+  if (!phone) return phone;
+
+  const countries = await Country.find({ phoneCode: { $exists: true } }).lean();
+
+  let cleaned = phone.replace(/\s+/g, "");
+
+  for (const c of countries) {
+    if (cleaned.startsWith(c.phoneCode)) {
+      return cleaned.replace(c.phoneCode, "");
+    }
+  }
+
+  // fallback → digits only last 10–12
+  return cleaned.replace(/\D/g, "");
+};
+
+
 export const startService = async (req, res) => {
     try {
         const { enquiryId } = req.params;
@@ -42,28 +59,31 @@ export const startService = async (req, res) => {
         }
 
         // AUTO-CREATE USER ACCOUNT
-        let patientUser = await User.findOne({ phone: enquiry.phone });
+       let patientUser = await User.findOne({ phone: enquiry.phone });
 
-        if (!patientUser) {
-            // Hash phone number as password
-            const hashedPassword = await bcrypt.hash(enquiry.phone, 10);
+let userCreated = false;
 
-            // Create user account
-            patientUser = await User.create({
-                name: enquiry.patientName,
-                email: `${enquiry.phone}@medtour.temp`, // Temporary email
-                phone: enquiry.phone,
-                password: hashedPassword,
-                role: "patient",
-                active: true,
-            });
+if (!patientUser) {
+    const phoneOnly = await stripCountryCode(enquiry.phone);
 
-            // Create patient profile
-            await PatientProfile.create({
-                userId: patientUser._id,
-                profileCompleted: false,
-            });
-        }
+    const hashedPassword = await bcrypt.hash(phoneOnly, 10);
+
+    patientUser = await User.create({
+        name: enquiry.patientName,
+        email: `${phoneOnly}@medtour.temp`,
+        phone: phoneOnly, // ✅ store number only
+        password: hashedPassword,
+        role: "patient",
+        active: true,
+    });
+
+    await PatientProfile.create({
+        userId: patientUser._id,
+        profileCompleted: false,
+    });
+
+    userCreated = true;
+}
 
         if (!patientUser || !patientUser._id) {
             throw new Error("Failed to resolve patient account");
