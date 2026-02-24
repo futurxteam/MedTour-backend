@@ -5,6 +5,7 @@ import Specialty from "../models/Speciality.js";
 import Enquiry from "../models/Enquiry.js";
 import GlobalSurgery from "../models/GlobalSurgery.js";
 import ServicePackage from "../models/ServicePackage.js";
+import { v2 as cloudinary } from "cloudinary";
 
 
 /* =====================================================
@@ -283,6 +284,7 @@ export const getHospitals = async (req, res) => {
 
     const profiles = await HospitalProfile.find(profileQuery)
       .populate("userId", "-password")
+      .populate("specialties", "name")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -290,6 +292,7 @@ export const getHospitals = async (req, res) => {
     const total = await HospitalProfile.countDocuments(profileQuery);
 
     let hospitals = profiles.map((p) => ({
+      ...p.toObject(),
       ...p.userId.toObject(),
       hospitalStatus: p.hospitalStatus,
     }));
@@ -314,6 +317,126 @@ export const getHospitals = async (req, res) => {
   } catch (error) {
     console.error("Fetch hospitals failed:", error);
     res.status(500).json({ message: "Failed to fetch hospitals" });
+  }
+};
+
+export const adminUpdateHospital = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const {
+      hospitalName,
+      description,
+      address,
+      city,
+      state,
+      country,
+      phone,
+      specialties,
+      avatar,
+    } = req.body;
+
+    const profile = await HospitalProfile.findOneAndUpdate(
+      { userId },
+      {
+        hospitalName,
+        description,
+        address,
+        city,
+        state,
+        country,
+        phone,
+        specialties,
+        avatar,
+      },
+      { new: true, upsert: true }
+    );
+
+    res.json({
+      message: "Hospital profile updated by admin",
+      profile
+    });
+  } catch (err) {
+    console.error("Admin update hospital profile error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const adminUpdateHospitalSpecialties = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { specialties } = req.body;
+
+    if (!Array.isArray(specialties)) {
+      return res.status(400).json({ message: "Specialties must be an array" });
+    }
+
+    const hospitalProfile = await HospitalProfile.findOne({ userId });
+
+    if (!hospitalProfile) {
+      return res.status(404).json({ message: "Hospital profile not found" });
+    }
+
+    hospitalProfile.specialties = specialties;
+    await hospitalProfile.save();
+
+    res.json({
+      message: "Hospital specialties updated successfully",
+      profile: hospitalProfile
+    });
+  } catch (err) {
+    console.error("Update hospital specialties error:", err);
+    res.status(500).json({ message: "Failed to update specialties" });
+  }
+};
+
+export const adminUploadHospitalPhotos = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    const hospitalProfile = await HospitalProfile.findOne({ userId });
+    if (!hospitalProfile) return res.status(404).json({ message: "Hospital profile not found" });
+
+    const newPhotos = req.files.map(file => ({
+      url: file.path,
+      publicId: file.filename
+    }));
+
+    hospitalProfile.photos.push(...newPhotos);
+    await hospitalProfile.save();
+
+    res.json({
+      message: "Photos uploaded successfully by admin",
+      photos: hospitalProfile.photos
+    });
+  } catch (err) {
+    console.error("Admin upload hospital photos error:", err);
+    res.status(500).json({ message: "Failed to upload photos" });
+  }
+};
+
+export const adminRemoveHospitalPhoto = async (req, res) => {
+  try {
+    const { userId, publicId } = req.params;
+    const hospitalProfile = await HospitalProfile.findOne({ userId });
+    if (!hospitalProfile) return res.status(404).json({ message: "Hospital profile not found" });
+
+    // Remove from Cloudinary
+    await cloudinary.uploader.destroy(publicId);
+
+    // Remove from DB
+    hospitalProfile.photos = hospitalProfile.photos.filter(p => p.publicId !== publicId);
+    await hospitalProfile.save();
+
+    res.json({
+      message: "Photo removed successfully by admin",
+      photos: hospitalProfile.photos
+    });
+  } catch (err) {
+    console.error("Admin remove hospital photo error:", err);
+    res.status(500).json({ message: "Failed to remove photo" });
   }
 };
 

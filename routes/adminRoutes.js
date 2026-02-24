@@ -24,7 +24,10 @@ import {
   createServicePackage,
   listServicePackages,
   toggleServicePackage,
-
+  adminUpdateHospital,
+  adminUpdateHospitalSpecialties,
+  adminUploadHospitalPhotos,
+  adminRemoveHospitalPhoto,
 } from "../controllers/adminController.js";
 import upload from "../middleware/uploadMiddleware.js";
 
@@ -67,5 +70,9 @@ router.get("/service-packages", listServicePackages);
 router.patch("/service-packages/:id/toggle", toggleServicePackage);
 
 // 🏥 Hospital Management
+router.put("/hospitals/:userId", adminUpdateHospital);
+router.patch("/hospitals/:userId/specialties", adminUpdateHospitalSpecialties);
+router.post("/hospitals/:userId/photos", upload.array("photos", 5), adminUploadHospitalPhotos);
+router.delete("/hospitals/:userId/photos/:publicId(*)", adminRemoveHospitalPhoto);
 
 export default router;

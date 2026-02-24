@@ -9,7 +9,10 @@ import {
     getCountries,
     getCities,
     getLowestQuotes,
-    getCommonProcedures
+    getCommonProcedures,
+    getPublicHospitals,
+    getPublicHospitalById,
+    getPublicDoctorById
 } from "../controllers/publicController.js";
 import { getDoctorPhoto } from "../controllers/hospitalController.js";
 
@@ -40,5 +43,10 @@ router.get("/cities", getCities);
 // New Homepage Expansion Routes
 router.get("/lowest-quotes", getLowestQuotes);
 router.get("/common-procedures", getCommonProcedures);
+
+// Public Hospitals
+router.get("/hospitals", getPublicHospitals);
+router.get("/hospitals/:id", getPublicHospitalById);
+router.get("/doctors/:id", getPublicDoctorById);
 
 export default router;

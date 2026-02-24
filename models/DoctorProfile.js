@@ -1,6 +1,5 @@
-// models/DoctorProfile.js
 import mongoose from "mongoose";
-
+import HospitalProfile from "./HospitalProfile.js";
 
 const doctorProfileSchema = new mongoose.Schema(
   {
@@ -17,7 +16,6 @@ const doctorProfileSchema = new mongoose.Schema(
       required: true,
     },
 
-    // models/DoctorProfile.js
     specializations: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -26,20 +24,13 @@ const doctorProfileSchema = new mongoose.Schema(
       },
     ],
 
-
-
     experience: Number,
     qualifications: String,
     licenseNumber: String,
     designation: String,
     consultationFee: Number,
     about: String,
-    bio: String, // Keeping bio for compatibility, but 'about' will be used more extensively
-
-    profileCompleted: {
-      type: Boolean,
-      default: false,
-    },
+    bio: String,
 
     profilePhoto: {
       data: Buffer,
@@ -54,5 +45,23 @@ const doctorProfileSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+/**
+ * 🔥 KEEP HOSPITAL.doctors[] IN SYNC
+ * Runs ONLY when a new doctor is created
+ */
+doctorProfileSchema.post("save", async function (doc, next) {
+  if (!doc.isNew) return next();
+
+  try {
+    await HospitalProfile.findOneAndUpdate(
+      { userId: doc.hospitalId },
+      { $addToSet: { doctors: doc._id } }
+    );
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default mongoose.model("DoctorProfile", doctorProfileSchema);

@@ -450,10 +450,19 @@ export const updateHospitalProfile = async (req, res) => {
 ===================================================== */
 export const getHospitalSpecializations = async (req, res) => {
   try {
-    const specialties = await Specialty.find({ active: true }, "name");
-    res.json({ specialties });
+    if (req.user.role !== "hospital") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    // Return ALL active specialties so hospitals can pick from them or assign to doctors
+    const allSpecialties = await Specialty.find({ active: true }).sort({ name: 1 });
+
+    res.json({
+      specialties: allSpecialties,
+      specializations: allSpecialties
+    });
   } catch (err) {
-    console.error("Get specializations error:", err);
+    console.error("Get hospital specializations error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

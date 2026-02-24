@@ -317,7 +317,6 @@ export const registerHospital = async (req, res) => {
   await HospitalProfile.create({
     userId: hospital._id,
     hospitalStatus: "pending",
-    profileCompleted: false,
   });
 
   res.status(201).json({

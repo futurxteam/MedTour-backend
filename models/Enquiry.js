@@ -23,7 +23,7 @@ const enquirySchema = new mongoose.Schema(
         // Source of enquiry
         source: {
             type: String,
-            enum: ["homepage", "services", "search"],
+            enum: ["homepage", "services", "search", "doctor_direct"],
             default: "services",
         },
 

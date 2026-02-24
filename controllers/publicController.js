@@ -272,37 +272,25 @@ export const globalSearch = async (req, res) => {
         });
 
         // Search Hospitals (approved only)
-        const hospitalUsers = await User.find({
-            role: "hospital",
-            active: true,
-            name: searchRegex
+        const hospitalProfiles = await HospitalProfile.find({
+            hospitalStatus: "approved",
+            hospitalName: searchRegex
         })
-            .select("_id name email")
+            .populate("userId", "active")
+            .select("_id hospitalName city state description userId")
             .limit(10)
             .lean();
 
-        const hospitalIds = hospitalUsers.map(h => h._id);
-        const hospitalProfiles = await HospitalProfile.find({
-            userId: { $in: hospitalIds },
-            hospitalStatus: "approved"
-        })
-            .select("userId hospitalName city state description")
-            .lean();
-
-        // Enrich hospital data with profile info
-        const hospitals = hospitalUsers
-            .map(hosp => {
-                const profile = hospitalProfiles.find(p => p.userId.toString() === hosp._id.toString());
-                if (!profile) return null; // Only return approved hospitals
-                return {
-                    _id: hosp._id,
-                    name: profile.hospitalName || hosp.name,
-                    city: profile.city,
-                    state: profile.state,
-                    description: profile.description
-                };
-            })
-            .filter(Boolean); // Remove null entries
+        // Enrich hospital data and filter by active user status
+        const hospitals = hospitalProfiles
+            .filter(profile => profile.userId && profile.userId.active !== false)
+            .map(profile => ({
+                _id: profile._id, // Profile ID for public profile link
+                name: profile.hospitalName,
+                city: profile.city,
+                state: profile.state,
+                description: profile.description
+            }));
 
         res.json({
             doctors,
@@ -402,12 +390,28 @@ export const getCommonProcedures = async (req, res) => {
  */
 export const getPublicHospitals = async (req, res) => {
     try {
-        const hospitals = await HospitalProfile.find({ hospitalStatus: "approved" })
+        const hospitals = await HospitalProfile.find({
+            hospitalStatus: "approved"
+        })
             .populate("specialties", "name")
-            .select("hospitalName city country avatar photos specialties")
+            .populate({
+                path: "doctors",
+                populate: {
+                    path: "userId",
+                    select: "name active",
+                    match: { active: true } // 🔥 ONLY ACTIVE DOCTORS
+                }
+            })
+            .select("hospitalName city country avatar photos specialties doctors")
             .lean();
 
-        res.json({ hospitals });
+        // Remove doctors whose user is inactive
+        const sanitized = hospitals.map(h => ({
+            ...h,
+            doctors: (h.doctors || []).filter(d => d.userId)
+        }));
+
+        res.json({ hospitals: sanitized });
     } catch (err) {
         console.error("Get public hospitals error:", err);
         res.status(500).json({ message: "Failed to fetch hospitals" });
@@ -426,7 +430,8 @@ export const getPublicHospitalById = async (req, res) => {
                 path: "doctors",
                 populate: {
                     path: "userId",
-                    select: "name email"
+                    select: "name email active",
+                    match: { active: true } // 🔥 FILTER HERE
                 }
             })
             .lean();
@@ -435,15 +440,16 @@ export const getPublicHospitalById = async (req, res) => {
             return res.status(404).json({ message: "Hospital not found" });
         }
 
-        // Clean up doctor data to only expose what's needed
-        const doctors = (hospital.doctors || []).map(p => ({
-            _id: p.userId?._id,
-            name: p.userId?.name,
-            designation: p.designation,
-            specializations: p.specializations,
-            experience: p.experience,
-            hasPhoto: !!p.profilePhoto?.data
-        }));
+        const doctors = (hospital.doctors || [])
+            .filter(d => d.userId) // remove inactive
+            .map(d => ({
+                _id: d.userId._id,
+                name: d.userId.name,
+                designation: d.designation,
+                specializations: d.specializations,
+                experience: d.experience,
+                hasPhoto: !!d.profilePhoto?.data
+            }));
 
         res.json({
             ...hospital,
@@ -452,5 +458,41 @@ export const getPublicHospitalById = async (req, res) => {
     } catch (err) {
         console.error("Get public hospital detail error:", err);
         res.status(500).json({ message: "Failed to fetch hospital details" });
+    }
+};
+
+// GET /api/public/doctors/:id
+export const getPublicDoctorById = async (req, res) => {
+    try {
+        const doctorUser = await User.findOne({
+            _id: req.params.id,
+            role: "doctor",
+            active: true
+        }).select("_id name email");
+
+        if (!doctorUser) {
+            return res.status(404).json({ message: "Doctor not found" });
+        }
+
+        const profile = await DoctorProfile.findOne({
+            userId: doctorUser._id
+        }).lean();
+
+        res.json({
+            doctor: {
+                _id: doctorUser._id,
+                name: doctorUser.name,
+                email: doctorUser.email,
+                designation: profile?.designation || "",
+                experience: profile?.experience || 0,
+                about: profile?.about || "",
+                qualifications: profile?.qualifications || "",
+                consultationFee: profile?.consultationFee || 0,
+                hasPhoto: !!profile?.profilePhoto?.data
+            }
+        });
+    } catch (err) {
+        console.error("Get public doctor error:", err);
+        res.status(500).json({ message: "Failed to fetch doctor" });
     }
 };
