@@ -14,7 +14,7 @@ import specialtyRoutes from "./routes/specialtyRoutes.js";
 import assistantRoutes from "./routes/assistantRoutes.js";
 import serviceJourneyRoutes from "./routes/serviceJourneyRoutes.js";
 import patientRoutes from "./routes/patientRoutes.js";
-import publicRoutes from "./routes/publicRoutes.js"; 
+import publicRoutes from "./routes/publicRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -41,10 +41,15 @@ const connectDB = async () => {
 /* =========================
    Middleware
 ========================= */
-app.use(cors({
-   origin: process.env.FRONTEND_URL || "http://localhost:5173",
-   credentials: true
-}));
+app.use(
+   cors({
+      origin: [
+         "http://localhost:5173",
+         "https://med-tour-frontend.vercel.app"
+      ],
+      credentials: true,
+   })
+);
 app.use(express.json());
 
 /* =========================
