@@ -12,7 +12,8 @@ import {
     getCommonProcedures,
     getPublicHospitals,
     getPublicHospitalById,
-    getPublicDoctorById
+    getPublicDoctorById,
+    getSurgeries
 } from "../controllers/publicController.js";
 import { getDoctorPhoto } from "../controllers/hospitalController.js";
 
@@ -20,6 +21,7 @@ const router = express.Router();
 
 router.get("/doctor/:id/photo", getDoctorPhoto);
 
+router.get("/surgeries", getSurgeries);
 router.get("/surgeries-menu", getSurgeriesMenu);
 router.get(
     "/specialties/:specialtyId/public-surgeries",

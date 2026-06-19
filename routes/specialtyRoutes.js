@@ -2,6 +2,8 @@ import express from "express";
 import Specialty from "../models/Speciality.js";
 import { verifyToken, authorizeRoles } from "../middleware/authMiddleware.js";
 
+import getLocalized from "../utils/localize.js";
+
 const router = express.Router();
 
 /**
@@ -11,8 +13,22 @@ const router = express.Router();
  */
 router.get("/", async (req, res) => {
     try {
-        const specialties = await Specialty.find({ active: true });
-        res.json(specialties);
+        const lang = req.query.lang || "en";
+        console.log("LANG:", lang);
+
+        const specialties = await Specialty.find({ active: true }).lean();
+        
+        if (specialties.length > 0) {
+            console.log("DATA (sample):", JSON.stringify(specialties[0], null, 2));
+        }
+
+        const localized = specialties.map(s => ({
+            _id: s._id,
+            name: getLocalized(s.name, lang),
+            description: getLocalized(s.description, lang)
+        }));
+
+        res.json(localized);
     } catch (err) {
         console.error("Get specialties error:", err);
         res.status(500).json({ message: "Server error" });

@@ -8,6 +8,16 @@ import Specialty from "../models/Speciality.js";
 import GlobalSurgery from "../models/GlobalSurgery.js";
 import { processProfilePhoto } from "../utils/imageProcessor.js";
 import { v2 as cloudinary } from "cloudinary";
+import getLocalized from "../utils/localize.js";
+
+/**
+ * Ensures Admin/Hospital UI always receives English strings.
+ */
+function toEnglish(field) {
+  if (!field) return "";
+  if (typeof field === "object") return field.en || "";
+  return field;
+}
 
 /* =====================================================
    ADD DOCTOR
@@ -70,11 +80,11 @@ export const addDoctor = async (req, res) => {
       userId: doctor._id,
       hospitalId: req.user.id,
       specializations,
-      designation,
+      designation: { en: designation, ar: "" },
       experience,
       consultationFee,
-      about,
-      qualifications,
+      about: { en: about, ar: "" },
+      qualifications: { en: qualifications, ar: "" },
       licenseNumber,
     });
 
@@ -121,16 +131,16 @@ export const listDoctors = async (req, res) => {
       .map((p) => ({
         id: p.userId._id,
         _id: p.userId._id,
-        name: p.userId.name || "Unknown",
+        name: toEnglish(p.userId.name) || "Unknown",
         email: p.userId.email || "",
         active: p.userId.active ?? true,
-        specializations: (p.specializations || []).map(s => s.name || s),
+        specializations: (p.specializations || []).map(s => toEnglish(s.name) || s),
         specializationIds: (p.specializations || []).map(s => s._id || s),
-        designation: p.designation || "",
+        designation: toEnglish(p.designation) || "",
         experience: p.experience || 0,
         consultationFee: p.consultationFee || 0,
-        about: p.about || "",
-        qualifications: p.qualifications || "",
+        about: toEnglish(p.about) || "",
+        qualifications: toEnglish(p.qualifications) || "",
         licenseNumber: p.licenseNumber || "",
         profileCompleted: !!p.profileCompleted,
         hasPhoto: !!p.profilePhoto?.data,
@@ -208,7 +218,12 @@ export const updateDoctorProfileByHospital = async (req, res) => {
     // 1. Update User (Name)
     const user = await User.findOneAndUpdate(
       { _id: doctorId, role: "doctor" },
-      { name },
+      { 
+        $set: {
+          "name.en": name,
+          "name.ar": req.body.name_ar || ""
+        }
+      },
       { new: true }
     );
 
@@ -220,11 +235,11 @@ export const updateDoctorProfileByHospital = async (req, res) => {
     const profile = await DoctorProfile.findOneAndUpdate(
       { userId: doctorId, hospitalId: req.user.id },
       {
-        designation,
+        designation: { en: designation, ar: req.body.designation_ar || "" },
         experience,
         consultationFee,
-        about,
-        qualifications,
+        about: { en: about, ar: req.body.about_ar || "" },
+        qualifications: { en: qualifications, ar: req.body.qualifications_ar || "" },
         licenseNumber,
         specializations
       },
@@ -257,11 +272,20 @@ export const getHospitalMe = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const user = await User.findById(req.user.id).select("-password");
-    const profile = await HospitalProfile.findOne({ userId: user._id });
+    const user = await User.findById(req.user.id).select("-password").lean();
+    const profile = await HospitalProfile.findOne({ userId: user._id }).lean();
+
+    if (profile) {
+      profile.hospitalName = toEnglish(profile.hospitalName);
+      profile.city = toEnglish(profile.city);
+      profile.state = toEnglish(profile.state);
+      profile.country = toEnglish(profile.country);
+      profile.address = toEnglish(profile.address);
+    }
 
     res.json({
-      ...user.toObject(),
+      ...user,
+      name: toEnglish(user.name),
       profile
     });
   } catch (err) {
@@ -326,7 +350,10 @@ export const addSurgery = async (req, res) => {
       hospitalId: hospitalUserId,
       globalSurgeryId: globalSurgery._id,
       specialization: globalSurgery.specialization,
-      description: description || globalSurgery.description,
+      description: {
+        en: description || (globalSurgery.description?.en || ""),
+        ar: req.body.description_ar || (globalSurgery.description?.ar || "")
+      },
       duration: duration || globalSurgery.duration,
       cost,
       assignedDoctors,
@@ -422,12 +449,12 @@ export const updateHospitalProfile = async (req, res) => {
     const profile = await HospitalProfile.findOneAndUpdate(
       { userId: req.user.id },
       {
-        hospitalName,
-        description,
-        address,
-        city,
-        state,
-        country,
+        hospitalName: req.body.hospitalName_en ? { en: req.body.hospitalName_en, ar: req.body.hospitalName_ar || "" } : { en: hospitalName, ar: req.body.hospitalName_ar || "" },
+        description: req.body.description_en ? { en: req.body.description_en, ar: req.body.description_ar || "" } : { en: description, ar: req.body.description_ar || "" },
+        address: req.body.address_en ? { en: req.body.address_en, ar: req.body.address_ar || "" } : { en: address, ar: req.body.address_ar || "" },
+        city: req.body.city_en ? { en: req.body.city_en, ar: req.body.city_ar || "" } : { en: city, ar: req.body.city_ar || "" },
+        state: req.body.state_en ? { en: req.body.state_en, ar: req.body.state_ar || "" } : { en: state, ar: req.body.state_ar || "" },
+        country: req.body.country_en ? { en: req.body.country_en, ar: req.body.country_ar || "" } : { en: country, ar: req.body.country_ar || "" },
         phone,
         specialties,
         avatar,
@@ -454,12 +481,18 @@ export const getHospitalSpecializations = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    // Return ALL active specialties so hospitals can pick from them or assign to doctors
-    const allSpecialties = await Specialty.find({ active: true }).sort({ name: 1 });
+    // Return ALL active specialties English-only for Dashboard
+    const allSpecialties = await Specialty.find({ active: true }).sort({ name: 1 }).lean();
+
+    const localized = allSpecialties.map(s => ({
+      ...s,
+      name: toEnglish(s.name),
+      description: toEnglish(s.description)
+    }));
 
     res.json({
-      specialties: allSpecialties,
-      specializations: allSpecialties
+      specialties: localized,
+      specializations: localized
     });
   } catch (err) {
     console.error("Get hospital specializations error:", err);

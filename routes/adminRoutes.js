@@ -28,6 +28,7 @@ import {
   adminUpdateHospitalSpecialties,
   adminUploadHospitalPhotos,
   adminRemoveHospitalPhoto,
+  getDashboardStats,
 } from "../controllers/adminController.js";
 import upload from "../middleware/uploadMiddleware.js";
 
@@ -38,6 +39,7 @@ const router = express.Router();
 /* 🔒 ADMIN ONLY */
 router.use(verifyToken, authorizeRoles("admin"));
 
+router.get("/dashboard-stats", getDashboardStats);
 router.get("/users", getUsers);
 router.post("/users", createUser);
 router.put("/users/:id", updateUser);

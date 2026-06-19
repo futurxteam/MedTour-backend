@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 import HospitalProfile from "./HospitalProfile.js";
 
+const multilingualField = {
+  en: { type: String, default: "" },
+  ar: { type: String, default: "" },
+};
+
 const doctorProfileSchema = new mongoose.Schema(
   {
     userId: {
@@ -25,12 +30,12 @@ const doctorProfileSchema = new mongoose.Schema(
     ],
 
     experience: Number,
-    qualifications: String,
+    qualifications: multilingualField,
     licenseNumber: String,
-    designation: String,
+    designation: multilingualField,
     consultationFee: Number,
-    about: String,
-    bio: String,
+    about: multilingualField,
+    bio: multilingualField,
 
     profilePhoto: {
       data: Buffer,

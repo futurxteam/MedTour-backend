@@ -1,18 +1,15 @@
 import mongoose from "mongoose";
 
+const multilingualField = {
+  en: { type: String, default: "" },
+  ar: { type: String, default: "" },
+};
+
 const specialtySchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
+    name: multilingualField,
 
-    description: {
-      type: String,
-      trim: true,
-    },
+    description: multilingualField,
 
     active: {
       type: Boolean,

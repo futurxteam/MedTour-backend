@@ -1,13 +1,13 @@
 import mongoose from "mongoose";
 
+const multilingualField = {
+  en: { type: String, default: "" },
+  ar: { type: String, default: "" },
+};
+
 const globalSurgerySchema = new mongoose.Schema(
     {
-        surgeryName: {
-            type: String,
-            required: true,
-            trim: true,
-            unique: true,
-        },
+        surgeryName: multilingualField,
 
         specialization: {
             type: mongoose.Schema.Types.ObjectId,
@@ -16,10 +16,7 @@ const globalSurgerySchema = new mongoose.Schema(
             index: true,
         },
 
-        description: {
-            type: String,
-            trim: true,
-        },
+        description: multilingualField,
 
         minimumCost: {
             type: Number,

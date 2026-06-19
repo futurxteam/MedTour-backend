@@ -1,6 +1,11 @@
 // models/HospitalProfile.js
 import mongoose from "mongoose";
 
+const multilingualField = {
+  en: { type: String, default: "" },
+  ar: { type: String, default: "" },
+};
+
 const hospitalProfileSchema = new mongoose.Schema(
   {
     userId: {
@@ -16,12 +21,13 @@ const hospitalProfileSchema = new mongoose.Schema(
       default: "pending",
     },
 
-    hospitalName: String,
-    description: String,
-    address: String,
-    city: String,
-    state: String,
-    country: String,
+    hospitalName: multilingualField,
+    description: multilingualField,
+    address: multilingualField,
+    city: multilingualField,
+    state: multilingualField,
+    country: multilingualField,
+
     phone: String,
     specialties: [
       {

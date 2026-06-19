@@ -7,6 +7,15 @@ import GlobalSurgery from "../models/GlobalSurgery.js";
 import ServicePackage from "../models/ServicePackage.js";
 import { v2 as cloudinary } from "cloudinary";
 
+/**
+ * Ensures Admin UI always receives English strings.
+ */
+function toEnglish(field) {
+  if (!field) return "";
+  if (typeof field === "object") return field.en || "";
+  return field;
+}
+
 
 /* =====================================================
    GET USERS (SEARCH + FILTER + PAGINATION)
@@ -47,13 +56,19 @@ export const getUsers = async (req, res) => {
         .select("-password")
         .skip(skip)
         .limit(limit)
-        .sort({ createdAt: -1 }),
+        .sort({ createdAt: -1 })
+        .lean(),
 
       User.countDocuments(query),
     ]);
 
+    const cleanUsers = users.map(u => ({
+      ...u,
+      name: toEnglish(u.name)
+    }));
+
     res.status(200).json({
-      users,
+      users: cleanUsers,
       pagination: {
         page,
         limit,
@@ -209,11 +224,12 @@ export const deleteUser = async (req, res) => {
 export const getPendingHospitals = async (req, res) => {
   const profiles = await HospitalProfile.find({
     hospitalStatus: "pending",
-  }).populate("userId", "-password");
+  }).populate("userId", "-password").lean();
 
   res.json(
     profiles.map((p) => ({
-      ...p.userId.toObject(),
+      ...p.userId,
+      name: toEnglish(p.userId?.name),
       hospitalStatus: p.hospitalStatus,
     }))
   );
@@ -234,11 +250,12 @@ export const getApprovedHospitals = async (req, res) => {
   try {
     const profiles = await HospitalProfile.find({
       hospitalStatus: "approved",
-    }).populate("userId", "-password");
+    }).populate("userId", "-password").lean();
 
     res.status(200).json(
       profiles.map((p) => ({
-        ...p.userId.toObject(),
+        ...p.userId,
+        name: toEnglish(p.userId?.name),
         hospitalStatus: p.hospitalStatus,
       }))
     );
@@ -287,13 +304,23 @@ export const getHospitals = async (req, res) => {
       .populate("specialties", "name")
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
 
     const total = await HospitalProfile.countDocuments(profileQuery);
 
     let hospitals = profiles.map((p) => ({
-      ...p.toObject(),
-      ...p.userId.toObject(),
+      ...p,
+      ...p.userId,
+      name: toEnglish(p.userId?.name),
+      hospitalName: toEnglish(p.hospitalName),
+      city: toEnglish(p.city),
+      country: toEnglish(p.country),
+      description: toEnglish(p.description),
+      specialties: (p.specialties || []).map(s => ({
+        ...s,
+        name: toEnglish(s.name)
+      })),
       hospitalStatus: p.hospitalStatus,
     }));
 
@@ -338,12 +365,12 @@ export const adminUpdateHospital = async (req, res) => {
     const profile = await HospitalProfile.findOneAndUpdate(
       { userId },
       {
-        hospitalName,
-        description,
-        address,
-        city,
-        state,
-        country,
+        hospitalName: { en: toEnglish(hospitalName), ar: req.body.hospitalName_ar || "" },
+        description: { en: toEnglish(description), ar: req.body.description_ar || "" },
+        address: { en: toEnglish(address), ar: req.body.address_ar || "" },
+        city: { en: toEnglish(city), ar: req.body.city_ar || "" },
+        state: { en: toEnglish(state), ar: req.body.state_ar || "" },
+        country: { en: toEnglish(country), ar: req.body.country_ar || "" },
         phone,
         specialties,
         avatar,
@@ -453,7 +480,10 @@ export const addSpecialty = async (req, res) => {
       return res.status(409).json({ message: "Specialty already exists" });
     }
 
-    const specialty = await Specialty.create({ name, description });
+    const specialty = await Specialty.create({ 
+      name: { en: name, ar: req.body.name_ar || "" }, 
+      description: { en: description, ar: req.body.description_ar || "" } 
+    });
     res.status(201).json(specialty);
   } catch (err) {
     res.status(500).json({ message: "Server error" });
@@ -461,8 +491,14 @@ export const addSpecialty = async (req, res) => {
 };
 
 export const listSpecialties = async (req, res) => {
-  const specialties = await Specialty.find().sort({ name: 1 });
-  res.json(specialties);
+  const specialties = await Specialty.find({}).lean();
+  const localized = specialties.map(s => ({
+    ...s,
+    name: toEnglish(s.name),
+    description: toEnglish(s.description)
+  })).sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json(localized);
 };
 
 export const toggleSpecialty = async (req, res) => {
@@ -491,13 +527,29 @@ export const getAllEnquiries = async (req, res) => {
         .populate("surgeryId", "surgeryName")
         .populate("doctorId", "name")
         .populate("assignedPA", "name")
+        .populate("hospitalProfileId", "hospitalName city")
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(),
       Enquiry.countDocuments(),
     ]);
 
+    const cleanEnquiries = enquiries.map(e => ({
+      ...e,
+      patientName: toEnglish(e.patientName),
+      specialtyId: e.specialtyId ? { ...e.specialtyId, name: toEnglish(e.specialtyId.name) } : null,
+      surgeryId: e.surgeryId ? { ...e.surgeryId, surgeryName: toEnglish(e.surgeryId.surgeryName) } : null,
+      doctorId: e.doctorId ? { ...e.doctorId, name: toEnglish(e.doctorId.name) } : null,
+      assignedPA: e.assignedPA ? { ...e.assignedPA, name: toEnglish(e.assignedPA.name) } : null,
+      hospitalProfileId: e.hospitalProfileId ? { 
+        ...e.hospitalProfileId, 
+        hospitalName: toEnglish(e.hospitalProfileId.hospitalName),
+        city: toEnglish(e.hospitalProfileId.city)
+      } : null,
+    }));
+
     res.json({
-      enquiries,
+      enquiries: cleanEnquiries,
       pagination: {
         page,
         limit,
@@ -513,8 +565,12 @@ export const getAllEnquiries = async (req, res) => {
 
 export const getAssistants = async (req, res) => {
   try {
-    const assistants = await User.find({ role: "assistant", active: true }).select("name email _id");
-    res.json(assistants);
+    const assistants = await User.find({ role: "assistant", active: true }).select("name email _id").lean();
+    const cleanAssistants = assistants.map(a => ({
+      ...a,
+      name: toEnglish(a.name)
+    }));
+    res.json(cleanAssistants);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch assistants" });
   }
@@ -549,8 +605,19 @@ export const listGlobalSurgeries = async (req, res) => {
   try {
     const surgeries = await GlobalSurgery.find()
       .populate("specialization", "name")
-      .sort({ surgeryName: 1 });
-    res.json(surgeries);
+      .lean();
+    
+    const localized = surgeries.map(s => ({
+      ...s,
+      surgeryName: toEnglish(s.surgeryName),
+      description: toEnglish(s.description),
+      specialization: s.specialization ? {
+        ...s.specialization,
+        name: toEnglish(s.specialization.name)
+      } : null
+    })).sort((a, b) => a.surgeryName.localeCompare(b.surgeryName));
+
+    res.json(localized);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch global surgeries" });
   }
@@ -570,9 +637,9 @@ export const addGlobalSurgery = async (req, res) => {
     }
 
     const surgery = await GlobalSurgery.create({
-      surgeryName,
+      surgeryName: { en: surgeryName, ar: req.body.surgeryName_ar || "" },
       specialization,
-      description,
+      description: { en: description, ar: req.body.description_ar || "" },
       duration,
       minimumCost,
     });
@@ -602,7 +669,14 @@ export const updateGlobalSurgery = async (req, res) => {
     const { surgeryName, specialization, description, duration, minimumCost, active } = req.body;
     const surgery = await GlobalSurgery.findByIdAndUpdate(
       req.params.id,
-      { surgeryName, specialization, description, duration, minimumCost, active },
+      { 
+        surgeryName: typeof surgeryName === "object" ? surgeryName : { en: surgeryName, ar: req.body.surgeryName_ar || "" },
+        specialization,
+        description: typeof description === "object" ? description : { en: description, ar: req.body.description_ar || "" },
+        duration,
+        minimumCost,
+        active 
+      },
       { new: true }
     );
 
@@ -662,7 +736,7 @@ export const createServicePackage = async (req, res) => {
 
 export const listServicePackages = async (req, res) => {
   try {
-    const packages = await ServicePackage.find().sort({ createdAt: -1 });
+    const packages = await ServicePackage.find().sort({ createdAt: -1 }).lean();
     res.json(packages);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch service packages" });
@@ -680,5 +754,26 @@ export const toggleServicePackage = async (req, res) => {
     res.json({ active: pkg.active });
   } catch (error) {
     res.status(500).json({ message: "Failed to toggle package status" });
+  }
+};
+
+export const getDashboardStats = async (req, res) => {
+  try {
+    const [totalUsers, totalHospitals, pendingRequests, pendingHospitals] = await Promise.all([
+      User.countDocuments({ role: { $ne: "admin" } }),
+      HospitalProfile.countDocuments({ hospitalStatus: "approved" }),
+      Enquiry.countDocuments({ assignedPA: null }),
+      HospitalProfile.countDocuments({ hospitalStatus: "pending" }),
+    ]);
+
+    res.json({
+      totalUsers,
+      totalHospitals,
+      pendingRequests,
+      pendingHospitalsCount: pendingHospitals,
+    });
+  } catch (error) {
+    console.error("Dashboard stats error:", error);
+    res.status(500).json({ message: "Failed to fetch dashboard stats" });
   }
 };

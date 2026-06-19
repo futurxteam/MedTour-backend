@@ -23,7 +23,7 @@ const enquirySchema = new mongoose.Schema(
         // Source of enquiry
         source: {
             type: String,
-            enum: ["homepage", "services", "search", "doctor_direct"],
+            enum: ["homepage", "services", "search", "doctor_direct", "hospital_enquiry"],
             default: "services",
         },
 
@@ -47,6 +47,11 @@ const enquirySchema = new mongoose.Schema(
         doctorId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
+        },
+
+        hospitalProfileId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "HospitalProfile",
         },
 
         consultationDate: {

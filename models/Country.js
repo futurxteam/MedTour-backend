@@ -3,9 +3,8 @@ import mongoose from "mongoose";
 const countrySchema = new mongoose.Schema(
     {
         name: {
-            type: String,
-            required: true,
-            unique: true,
+            en: { type: String, default: "" },
+            ar: { type: String, default: "" }
         },
         code: {
             type: String,

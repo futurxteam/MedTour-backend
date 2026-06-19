@@ -31,6 +31,15 @@ export const verifyToken = (req, res, next) => {
       role: decoded.role,
     };
 
+    // 🏥 ADMIN IMPERSONATION LOGIC
+    const impersonateId = req.headers["x-admin-view-as-hospital-id"];
+    if (impersonateId && req.user.role === "admin") {
+      req.user.adminId = req.user.id; // Keep track of who is actually performing the action
+      req.user.id = impersonateId;
+      req.user.role = "hospital";
+      req.user.isImpersonating = true;
+    }
+
     if (!req.user.id || !req.user.role) {
       return res.status(401).json({ message: "Unauthorized" });
     }

@@ -1,11 +1,11 @@
-// controllers/authController.js
-
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import getLocalized from "../utils/localize.js";
 import { OAuth2Client } from "google-auth-library"; // ✅ ADDED
 import HospitalProfile from "../models/HospitalProfile.js";
 import PatientProfile from "../models/PatientProfile.js";
+import { sendOTP, verifyOTP, normalizePhone } from "../services/otpService.js";
 
 // ✅ Google OAuth client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -38,7 +38,7 @@ export const signup = async (req, res) => {
 
     // 4. Create user (PATIENT by default)
     const user = await User.create({
-      name,
+      name: { en: name, ar: "" },
       email,
       password: hashedPassword,
       role: "user",
@@ -64,7 +64,7 @@ export const signup = async (req, res) => {
       token,
       user: {
         id: user._id,
-        name: user.name,
+        name: getLocalized(user.name, req.query.lang || "en"),
         email: user.email,
         role: user.role,
       },
@@ -165,7 +165,7 @@ export const login = async (req, res) => {
       token,
       user: {
         id: user._id,
-        name: user.name,
+        name: getLocalized(user.name, req.query.lang || "en"),
         email: user.email,
         phone: user.phone,
         role: user.role,
@@ -208,7 +208,7 @@ export const googleAuth = async (req, res) => {
     // 3. Create user if not exists (PATIENT)
     if (!user) {
       user = await User.create({
-        name,
+        name: { en: name, ar: "" },
         email,
         password: null,
         role: "user",
@@ -235,7 +235,7 @@ export const googleAuth = async (req, res) => {
       token: jwtToken,
       user: {
         id: user._id,
-        name: user.name,
+        name: getLocalized(user.name, req.query.lang || "en"),
         email: user.email,
         role: user.role,
       },
@@ -271,7 +271,7 @@ export const createPrimaryAdmin = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const admin = await User.create({
-      name,
+      name: { en: name, ar: "" },
       email,
       password: hashedPassword,
       role: "admin",
@@ -305,7 +305,7 @@ export const registerHospital = async (req, res) => {
   const hashedPassword = await bcrypt.hash(password, 10);
 
   const hospital = await User.create({
-    name,
+    name: { en: name, ar: "" },
     email,
     password: hashedPassword,
     role: "hospital",
@@ -322,4 +322,83 @@ export const registerHospital = async (req, res) => {
   res.status(201).json({
     message: "Hospital registration submitted",
   });
+};
+
+/**
+ * SEND OTP (Generic)
+ * POST /api/auth/send-otp
+ */
+export const sendOtp = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ message: "Phone number is required" });
+
+    const result = await sendOTP(phone);
+    res.status(200).json({ message: "OTP sent successfully", phone: result.phone });
+  } catch (error) {
+    console.error("Auth sendOtp error:", error);
+    res.status(500).json({ message: error.message || "Failed to send OTP" });
+  }
+};
+
+/**
+ * VERIFY OTP & LOGIN/SIGNUP
+ * POST /api/auth/verify-otp
+ */
+export const verifyOtp = async (req, res) => {
+  try {
+    const { phone, otp, name } = req.body; // name is optional for legacy login
+
+    if (!phone || !otp) {
+      return res.status(400).json({ message: "Phone and OTP are required" });
+    }
+
+    // 1. Verify OTP
+    const verification = await verifyOTP(phone, otp);
+    if (!verification.valid) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    const e164Phone = normalizePhone(phone);
+
+    // 2. Find or Create User
+    let user = await User.findOne({ phone: e164Phone });
+
+    if (!user) {
+      // Signup Flow
+      user = await User.create({
+        name: { en: name || "User", ar: "" },
+        phone: e164Phone,
+        role: "user",
+        active: true,
+        provider: "phone",
+      });
+
+      await PatientProfile.create({
+        userId: user._id,
+        profileCompleted: false,
+      });
+    }
+
+    // 3. Generate JWT
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.status(200).json({
+      message: "Authentication successful",
+      token,
+      user: {
+        id: user._id,
+        name: getLocalized(user.name, req.query.lang || "en"),
+        phone: user.phone,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Auth verifyOtp error:", error);
+    res.status(500).json({ message: "Verification failed" });
+  }
 };

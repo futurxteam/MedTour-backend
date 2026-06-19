@@ -7,7 +7,54 @@ import Country from "../models/Country.js";
 import City from "../models/City.js";
 import Specialty from "../models/Speciality.js";
 import GlobalSurgery from "../models/GlobalSurgery.js";
+import getLocalized from "../utils/localize.js";
+import { sendOTP, verifyOTP, normalizePhone } from "../services/otpService.js";
 
+/**
+ * POST /api/public/enquiry/send-otp
+ * Send OTP via Twilio Verify SMS
+ */
+export const sendEnquiryOtp = async (req, res) => {
+    try {
+        const { phone } = req.body;
+        console.log("DEBUG: sendEnquiryOtp request for phone:", phone);
+
+        if (!phone) {
+            return res.status(400).json({ message: "Phone number is required" });
+        }
+
+        const result = await sendOTP(phone);
+        console.log("DEBUG: sendEnquiryOtp result:", result);
+
+        return res.status(200).json({
+            message: "OTP sent successfully",
+            phone: result.phone,
+        });
+
+    } catch (error) {
+        console.error("sendEnquiryOtp ERROR:", {
+            message: error.message,
+            code: error.code,
+            status: error.status,
+            moreInfo: error.moreInfo
+        });
+
+        // Provide user-friendly Twilio error messages
+        if (error.code === 21614 || error.message.includes("Invalid phone number")) {
+            return res.status(400).json({ message: "Invalid phone number. Please check the code and digits." });
+        }
+        if (error.code === 20429) {
+            return res.status(429).json({ message: "Too many requests. Please wait a minute." });
+        }
+
+        return res.status(500).json({ message: error.message || "Failed to send OTP. Technical error." });
+    }
+};
+
+/**
+ * POST /api/public/enquiry/verify-otp
+ * Verify OTP via Twilio Verify, then create Enquiry
+ */
 export const verifyOtpAndCreateEnquiry = async (req, res) => {
     try {
         const {
@@ -18,6 +65,7 @@ export const verifyOtpAndCreateEnquiry = async (req, res) => {
             specialtyId,
             surgeryId,
             doctorId,
+            hospitalProfileId,
             source,
             country,
             city,
@@ -26,80 +74,77 @@ export const verifyOtpAndCreateEnquiry = async (req, res) => {
             consultationDate,
         } = req.body;
 
-        if (otp !== "123") {
-            return res.status(400).json({ message: "Invalid OTP" });
+        if (!phone || !otp) {
+            return res.status(400).json({ message: "Phone and OTP are required" });
         }
+
+        // 1. Verify the OTP with Twilio
+        const verification = await verifyOTP(phone, otp);
+
+        if (!verification.valid) {
+            return res.status(400).json({ message: "Invalid or expired OTP. Please try again." });
+        }
+
+        // 2. OTP verified — create the Enquiry
+        const e164Phone = normalizePhone(phone);
 
         const enquiryData = {
             patientName,
-            phone,
+            phone: e164Phone,
             contactMode: contactMode || "call",
             otpVerified: true,
             source: source || "services",
         };
 
-        // Add service-specific fields if provided
-        if (specialtyId) enquiryData.specialtyId = specialtyId;
-        if (surgeryId) enquiryData.surgeryId = surgeryId;
-        if (doctorId) enquiryData.doctorId = doctorId;
+        // Service-specific fields
+        if (specialtyId)       enquiryData.specialtyId = specialtyId;
+        if (surgeryId)         enquiryData.surgeryId = surgeryId;
+        if (doctorId)          enquiryData.doctorId = doctorId;
+        if (hospitalProfileId) enquiryData.hospitalProfileId = hospitalProfileId;
 
-        // Add homepage-specific fields if provided
-        if (country) enquiryData.country = country;
-        if (city) enquiryData.city = city;
-        if (medicalProblem) enquiryData.medicalProblem = medicalProblem;
-        if (ageOrDob) enquiryData.ageOrDob = ageOrDob;
-        if (consultationDate) enquiryData.consultationDate = consultationDate;
+        // Homepage-specific fields
+        if (country)           enquiryData.country = country;
+        if (city)              enquiryData.city = city;
+        if (medicalProblem)    enquiryData.medicalProblem = medicalProblem;
+        if (ageOrDob)          enquiryData.ageOrDob = ageOrDob;
+        if (consultationDate)  enquiryData.consultationDate = consultationDate;
 
         const enquiry = await Enquiry.create(enquiryData);
 
-        res.status(201).json({
+        return res.status(201).json({
             message: "Enquiry created successfully",
             enquiryId: enquiry._id,
         });
+
     } catch (error) {
-        console.error("Create enquiry error:", error);
-        res.status(500).json({ message: "Failed to create enquiry" });
-    }
-};
+        console.error("verifyOtpAndCreateEnquiry error:", error);
 
-// publicController.js
-export const sendEnquiryOtp = async (req, res) => {
-    try {
-        const { phone } = req.body;
-
-        if (!phone) {
-            return res.status(400).json({ message: "Phone number required" });
+        if (error.code === 20404) {
+            return res.status(400).json({ message: "OTP expired or not found. Please request a new one." });
         }
 
-        // DEV MODE OTP
-        console.log("DEV OTP for", phone, "is 123");
-
-        res.json({
-            message: "OTP sent successfully",
-            otp: "123", // optional: remove later
-        });
-    } catch (error) {
-        res.status(500).json({ message: "Failed to send OTP" });
+        return res.status(500).json({ message: "Failed to verify OTP. Please try again." });
     }
 };
 
 
 export const getSurgeriesMenu = async (req, res) => {
     try {
+        const lang = req.query.lang || "en";
+
         // 1. Fetch all active specializations
-        const specializations = await Specialty.find({ active: true }).sort({ name: 1 }).lean();
+        const specializations = await Specialty.find({ active: true }).lean();
 
         // 2. Fetch all active surgeries
         const surgeries = await Surgery.find({ active: true })
-            .populate("specialization", "name")
-            .select("surgeryName specialization")
+            .populate("specialization")
             .lean();
 
         // 3. Initialize grouped object with all active specializations
-        // This ensures newly added specializations (with no surgeries yet) appear.
         const grouped = {};
         specializations.forEach(spec => {
-            grouped[spec.name] = {
+            const specName = getLocalized(spec.name, lang);
+            grouped[specName] = {
                 _id: spec._id,
                 surgeries: []
             };
@@ -107,23 +152,58 @@ export const getSurgeriesMenu = async (req, res) => {
 
         // 4. Fill in the surgeries for these specializations
         surgeries.forEach(s => {
-            if (!s.specialization?.name) return;
+            if (!s.specialization) return;
 
-            const specName = s.specialization.name;
+            const specName = getLocalized(s.specialization.name, lang);
 
-            // Only add if it's an active specialization (already in grouped)
             if (grouped[specName]) {
-                const alreadyExists = grouped[specName].surgeries.find(item => item.name === s.surgeryName);
+                // Get the surgery name from global surgery or fallback
+                const surgeryName = getLocalized(s.globalSurgeryId?.surgeryName, lang) || s._id.toString();
+
+                const alreadyExists = grouped[specName].surgeries.find(item => item.name === surgeryName);
                 if (!alreadyExists) {
                     grouped[specName].surgeries.push({
                         id: s._id,
-                        name: s.surgeryName
+                        name: surgeryName
                     });
                 }
             }
         });
 
-        res.json(grouped);
+        // Re-fetch surgeries with globalSurgeryId populated for names
+        const surgeriesWithGlobal = await Surgery.find({ active: true })
+            .populate("specialization")
+            .populate("globalSurgeryId", "surgeryName")
+            .lean();
+
+        // Rebuild with proper surgery names
+        const groupedFinal = {};
+        specializations.forEach(spec => {
+            const specName = getLocalized(spec.name, lang);
+            groupedFinal[specName] = {
+                _id: spec._id,
+                surgeries: []
+            };
+        });
+
+        surgeriesWithGlobal.forEach(s => {
+            if (!s.specialization) return;
+
+            const specName = getLocalized(s.specialization.name, lang);
+            const surgeryName = getLocalized(s.globalSurgeryId?.surgeryName, lang) || "Unknown";
+
+            if (groupedFinal[specName]) {
+                const alreadyExists = groupedFinal[specName].surgeries.find(item => item.name === surgeryName);
+                if (!alreadyExists) {
+                    groupedFinal[specName].surgeries.push({
+                        id: s._id,
+                        name: surgeryName
+                    });
+                }
+            }
+        });
+
+        res.json(groupedFinal);
     } catch (err) {
         console.error("Public menu error:", err);
         res.status(500).json({ message: "Failed to load surgeries" });
@@ -133,6 +213,7 @@ export const getSurgeriesMenu = async (req, res) => {
 export const getPublicSurgeriesBySpecialty = async (req, res) => {
     try {
         const { specialtyId } = req.params;
+        const lang = req.query.lang || "en";
 
         // Verify the specialization exists and is active
         const specialty = await Specialty.findOne({ _id: specialtyId, active: true });
@@ -145,20 +226,68 @@ export const getPublicSurgeriesBySpecialty = async (req, res) => {
             specialization: specialtyId,
             active: true,
         })
-            .populate("specialization", "name")
-            .populate("globalSurgeryId", "minimumCost")
-            .select("_id surgeryName description duration cost specialization globalSurgeryId");
+            .populate("specialization")
+            .populate("globalSurgeryId", "surgeryName minimumCost")
+            .lean();
 
-        res.json({ surgeries });
+        const localizedSurgeries = surgeries.map(s => ({
+            ...s,
+            surgeryName: getLocalized(s.globalSurgeryId?.surgeryName, lang),
+            description: getLocalized(s.description, lang),
+            specialization: s.specialization ? {
+                ...s.specialization,
+                name: getLocalized(s.specialization.name, lang)
+            } : s.specialization
+        }));
+
+        res.json({ surgeries: localizedSurgeries });
     } catch (err) {
         console.error("Fetch specialty surgeries error:", err);
         res.status(500).json({ message: "Failed to fetch surgeries" });
     }
 };
 
+/**
+ * GET /api/public/surgeries
+ * Localized Global Surgeries
+ */
+export const getSurgeries = async (req, res) => {
+    try {
+        const lang = req.query.lang || "en";
+        console.log("LANG:", lang);
+
+        const surgeries = await GlobalSurgery.find({ active: true })
+            .populate("specialization", "name")
+            .lean();
+
+        if (surgeries.length > 0) {
+            console.log("DATA (sample):", JSON.stringify(surgeries[0], null, 2));
+        }
+
+        const localizedData = surgeries.map(s => ({
+            _id: s._id,
+            surgeryName: getLocalized(s.surgeryName, lang),
+            description: getLocalized(s.description, lang),
+            minimumCost: s.minimumCost,
+
+            specialization: {
+                _id: s.specialization?._id,
+                name: getLocalized(s.specialization?.name, lang)
+            }
+        }));
+
+        res.json(localizedData);
+
+    } catch (error) {
+        console.error("Error fetching surgeries:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
 export const getPublicDoctorsBySurgery = async (req, res) => {
     try {
         const { surgeryId } = req.params;
+        const lang = req.query.lang || "en";
 
         const surgery = await Surgery.findOne({
             _id: surgeryId,
@@ -184,11 +313,12 @@ export const getPublicDoctorsBySurgery = async (req, res) => {
             const profile = profiles.find(p => p.userId.toString() === doc._id.toString());
             return {
                 ...doc,
-                designation: profile?.designation || "Specialist Surgeon",
-                about: profile?.about || "",
+                name: getLocalized(doc.name, lang),
+                designation: getLocalized(profile?.designation, lang) || "Specialist Surgeon",
+                about: getLocalized(profile?.about, lang) || "",
                 experience: profile?.experience || 0,
                 consultationFee: profile?.consultationFee || 0,
-                qualifications: profile?.qualifications || "",
+                qualifications: getLocalized(profile?.qualifications, lang) || "",
                 specializations: profile?.specializations || [],
                 hasPhoto: !!profile?.profilePhoto?.data
             };
@@ -204,11 +334,11 @@ export const getPublicDoctorsBySurgery = async (req, res) => {
 /**
  * Global Search API
  * Searches across doctors, surgeries, and hospitals
- * Returns structured results grouped by type
+ * Supports multilingual search with lang query param
  */
 export const globalSearch = async (req, res) => {
     try {
-        const { q } = req.query;
+        const { q, lang = "en" } = req.query;
 
         if (!q || q.trim().length < 2) {
             return res.json({
@@ -220,36 +350,63 @@ export const globalSearch = async (req, res) => {
 
         const searchRegex = new RegExp(q.trim(), "i"); // case-insensitive
 
-        // Search Surgeries (active only)
+        // Search Surgeries via GlobalSurgery names (active only)
+        // We search GlobalSurgery first, then find matching Surgery records
+        const matchingGlobalSurgeries = await GlobalSurgery.find({
+            active: true,
+            $or: [
+                { [`surgeryName.${lang}`]: searchRegex },
+                { [`surgeryName.en`]: searchRegex }
+            ]
+        }).select("_id").lean();
+
+        const globalSurgeryIds = matchingGlobalSurgeries.map(g => g._id);
+
         const surgeriesRaw = await Surgery.find({
             active: true,
-            surgeryName: searchRegex
+            globalSurgeryId: { $in: globalSurgeryIds }
         })
             .populate({
                 path: "specialization",
                 match: { active: true },
-                select: "name active"
             })
-            .select("_id surgeryName description duration specialization")
-            .limit(20) // Fetch more to allow filtering
+            .populate("globalSurgeryId", "surgeryName")
+            .select("_id description duration specialization globalSurgeryId")
+            .limit(20)
             .lean();
 
         // Filter out surgeries with inactive or missing specialization
         const surgeries = surgeriesRaw
             .filter(s => s.specialization && s.specialization.active !== false)
-            .slice(0, 10);
+            .slice(0, 10)
+            .map(s => ({
+                _id: s._id,
+                surgeryName: getLocalized(s.globalSurgeryId?.surgeryName, lang),
+                description: getLocalized(s.description, lang),
+                duration: s.duration,
+                specialization: s.specialization ? {
+                    _id: s.specialization._id,
+                    name: getLocalized(s.specialization.name, lang),
+                    active: s.specialization.active
+                } : null
+            }));
 
         // Search Doctors (active only)
         const doctorUsers = await User.find({
             role: "doctor",
             active: true,
-            name: searchRegex
+            $or: [
+                { [`name.${lang}`]: searchRegex },
+                { [`name.en`]: searchRegex },
+                // fallback for un-migrated plain string names
+                ...(lang !== "en" ? [{ name: searchRegex }] : [])
+            ]
         })
             .select("_id name email")
             .limit(10)
             .lean();
 
-        // Get doctor profiles to check if they're assigned to surgeries
+        // Get doctor profiles
         const doctorIds = doctorUsers.map(d => d._id);
         const doctorProfiles = await DoctorProfile.find({
             userId: { $in: doctorIds }
@@ -263,10 +420,10 @@ export const globalSearch = async (req, res) => {
             const profile = doctorProfiles.find(p => p.userId.toString() === doc._id.toString());
             return {
                 _id: doc._id,
-                name: doc.name,
+                name: getLocalized(doc.name, lang),
                 email: doc.email,
                 hospitalId: profile?.hospitalId?._id,
-                hospitalName: profile?.hospitalId?.name,
+                hospitalName: getLocalized(profile?.hospitalId?.name, lang),
                 hasPhoto: !!profile?.profilePhoto?.data
             };
         });
@@ -274,7 +431,10 @@ export const globalSearch = async (req, res) => {
         // Search Hospitals (approved only)
         const hospitalProfiles = await HospitalProfile.find({
             hospitalStatus: "approved",
-            hospitalName: searchRegex
+            $or: [
+                { [`hospitalName.${lang}`]: searchRegex },
+                { [`hospitalName.en`]: searchRegex }
+            ]
         })
             .populate("userId", "active")
             .select("_id hospitalName city state description userId")
@@ -286,10 +446,10 @@ export const globalSearch = async (req, res) => {
             .filter(profile => profile.userId && profile.userId.active !== false)
             .map(profile => ({
                 _id: profile._id, // Profile ID for public profile link
-                name: profile.hospitalName,
-                city: profile.city,
-                state: profile.state,
-                description: profile.description
+                name: getLocalized(profile.hospitalName, lang),
+                city: getLocalized(profile.city, lang),
+                state: getLocalized(profile.state, lang),
+                description: getLocalized(profile.description, lang)
             }));
 
         res.json({
@@ -310,12 +470,17 @@ export const globalSearch = async (req, res) => {
  */
 export const getCountries = async (req, res) => {
     try {
+        const lang = req.query.lang || "en";
         const countries = await Country.find()
             .select("name code hasCities phoneCode")
-            .sort({ name: 1 })
             .lean();
 
-        res.json({ countries });
+        const localized = countries.map(c => ({
+            ...c,
+            name: getLocalized(c.name, lang)
+        })).sort((a, b) => a.name.localeCompare(b.name));
+
+        res.json({ countries: localized });
     } catch (err) {
         console.error("Get countries error:", err);
         res.status(500).json({ message: "Failed to fetch countries" });
@@ -329,17 +494,20 @@ export const getCountries = async (req, res) => {
 export const getCities = async (req, res) => {
     try {
         const { country } = req.query;
-
-        if (!country) {
-            return res.status(400).json({ message: "Country code is required" });
-        }
+        const lang = req.query.lang || "en";
+        
+        if (!country) return res.json({ cities: [] });
 
         const cities = await City.find({ countryCode: country.toUpperCase() })
             .select("name")
-            .sort({ name: 1 })
             .lean();
 
-        res.json({ cities });
+        const localized = cities.map(c => ({
+            ...c,
+            name: getLocalized(c.name, lang)
+        })).sort((a, b) => a.name.localeCompare(b.name));
+
+        res.json({ cities: localized });
     } catch (err) {
         console.error("Get cities error:", err);
         res.status(500).json({ message: "Failed to fetch cities" });
@@ -352,13 +520,25 @@ export const getCities = async (req, res) => {
  */
 export const getLowestQuotes = async (req, res) => {
     try {
+        const lang = req.query.lang || "en";
+
         const lowestQuotes = await GlobalSurgery.find({ active: true })
-            .populate("specialization", "name")
+            .populate("specialization")
             .sort({ minimumCost: 1 })
             .limit(6)
             .lean();
 
-        res.json({ lowestQuotes });
+        const localized = lowestQuotes.map(q => ({
+            ...q,
+            surgeryName: getLocalized(q.surgeryName, lang),
+            description: getLocalized(q.description, lang),
+            specialization: q.specialization ? {
+                ...q.specialization,
+                name: getLocalized(q.specialization.name, lang)
+            } : q.specialization
+        }));
+
+        res.json({ lowestQuotes: localized });
     } catch (err) {
         console.error("Lowest quotes error:", err);
         res.status(500).json({ message: "Failed to fetch lowest quotes" });
@@ -371,13 +551,24 @@ export const getLowestQuotes = async (req, res) => {
  */
 export const getCommonProcedures = async (req, res) => {
     try {
-        // For demo, we just return top 8 active global surgeries
+        const lang = req.query.lang || "en";
+
         const commonProcedures = await GlobalSurgery.find({ active: true })
-            .populate("specialization", "name")
+            .populate("specialization")
             .limit(8)
             .lean();
 
-        res.json({ commonProcedures });
+        const localized = commonProcedures.map(p => ({
+            ...p,
+            surgeryName: getLocalized(p.surgeryName, lang),
+            description: getLocalized(p.description, lang),
+            specialization: p.specialization ? {
+                ...p.specialization,
+                name: getLocalized(p.specialization.name, lang)
+            } : p.specialization
+        }));
+
+        res.json({ commonProcedures: localized });
     } catch (err) {
         console.error("Common procedures error:", err);
         res.status(500).json({ message: "Failed to fetch common procedures" });
@@ -390,25 +581,40 @@ export const getCommonProcedures = async (req, res) => {
  */
 export const getPublicHospitals = async (req, res) => {
     try {
+        const lang = req.query.lang || "en";
+
         const hospitals = await HospitalProfile.find({
             hospitalStatus: "approved"
         })
-            .populate("specialties", "name")
+            .populate("specialties")
             .populate({
                 path: "doctors",
                 populate: {
                     path: "userId",
                     select: "name active",
-                    match: { active: true } // 🔥 ONLY ACTIVE DOCTORS
+                    match: { active: true }
                 }
             })
             .select("hospitalName city country avatar photos specialties doctors")
             .lean();
 
-        // Remove doctors whose user is inactive
+        // Remove doctors whose user is inactive + localize
         const sanitized = hospitals.map(h => ({
             ...h,
-            doctors: (h.doctors || []).filter(d => d.userId)
+            hospitalName: getLocalized(h.hospitalName, lang),
+            city: getLocalized(h.city, lang),
+            country: getLocalized(h.country, lang),
+            specialties: (h.specialties || []).map(s => ({
+                ...s,
+                name: getLocalized(s.name, lang)
+            })),
+            doctors: (h.doctors || []).filter(d => d.userId).map(d => ({
+                ...d,
+                userId: d.userId ? {
+                    ...d.userId,
+                    name: getLocalized(d.userId.name, lang)
+                } : d.userId
+            }))
         }));
 
         res.json({ hospitals: sanitized });
@@ -424,14 +630,16 @@ export const getPublicHospitals = async (req, res) => {
  */
 export const getPublicHospitalById = async (req, res) => {
     try {
+        const lang = req.query.lang || "en";
+
         const hospital = await HospitalProfile.findById(req.params.id)
-            .populate("specialties", "name")
+            .populate("specialties")
             .populate({
                 path: "doctors",
                 populate: {
                     path: "userId",
                     select: "name email active",
-                    match: { active: true } // 🔥 FILTER HERE
+                    match: { active: true }
                 }
             })
             .lean();
@@ -444,8 +652,8 @@ export const getPublicHospitalById = async (req, res) => {
             .filter(d => d.userId) // remove inactive
             .map(d => ({
                 _id: d.userId._id,
-                name: d.userId.name,
-                designation: d.designation,
+                name: getLocalized(d.userId.name, lang),
+                designation: getLocalized(d.designation, lang),
                 specializations: d.specializations,
                 experience: d.experience,
                 hasPhoto: !!d.profilePhoto?.data
@@ -453,6 +661,16 @@ export const getPublicHospitalById = async (req, res) => {
 
         res.json({
             ...hospital,
+            hospitalName: getLocalized(hospital.hospitalName, lang),
+            description: getLocalized(hospital.description, lang),
+            address: getLocalized(hospital.address, lang),
+            city: getLocalized(hospital.city, lang),
+            state: getLocalized(hospital.state, lang),
+            country: getLocalized(hospital.country, lang),
+            specialties: (hospital.specialties || []).map(s => ({
+                ...s,
+                name: getLocalized(s.name, lang)
+            })),
             doctors
         });
     } catch (err) {
@@ -464,11 +682,13 @@ export const getPublicHospitalById = async (req, res) => {
 // GET /api/public/doctors/:id
 export const getPublicDoctorById = async (req, res) => {
     try {
+        const lang = req.query.lang || "en";
+
         const doctorUser = await User.findOne({
             _id: req.params.id,
             role: "doctor",
             active: true
-        }).select("_id name email");
+        }).select("_id name email").lean();
 
         if (!doctorUser) {
             return res.status(404).json({ message: "Doctor not found" });
@@ -481,12 +701,12 @@ export const getPublicDoctorById = async (req, res) => {
         res.json({
             doctor: {
                 _id: doctorUser._id,
-                name: doctorUser.name,
+                name: getLocalized(doctorUser.name, lang),
                 email: doctorUser.email,
-                designation: profile?.designation || "",
+                designation: getLocalized(profile?.designation, lang) || "",
                 experience: profile?.experience || 0,
-                about: profile?.about || "",
-                qualifications: profile?.qualifications || "",
+                about: getLocalized(profile?.about, lang) || "",
+                qualifications: getLocalized(profile?.qualifications, lang) || "",
                 consultationFee: profile?.consultationFee || 0,
                 hasPhoto: !!profile?.profilePhoto?.data
             }

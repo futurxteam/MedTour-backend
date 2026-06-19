@@ -1,5 +1,10 @@
 import mongoose from "mongoose";
 
+const multilingualField = {
+  en: { type: String, default: "" },
+  ar: { type: String, default: "" },
+};
+
 const surgerySchema = new mongoose.Schema(
   {
     hospitalId: {
@@ -23,10 +28,7 @@ const surgerySchema = new mongoose.Schema(
       index: true,
     },
 
-    description: {
-      type: String,
-      trim: true,
-    },
+    description: multilingualField,
 
     duration: {
       type: String,

@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 const citySchema = new mongoose.Schema(
     {
         name: {
-            type: String,
-            required: true,
+            en: { type: String, default: "" },
+            ar: { type: String, default: "" }
         },
         countryCode: {
             type: String,
@@ -16,6 +16,6 @@ const citySchema = new mongoose.Schema(
 );
 
 // Compound index to ensure unique city names per country
-citySchema.index({ name: 1, countryCode: 1 }, { unique: true });
+// citySchema.index({ name: 1, countryCode: 1 }, { unique: true });
 
 export default mongoose.model("City", citySchema);
