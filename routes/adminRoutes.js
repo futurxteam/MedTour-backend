@@ -25,6 +25,7 @@ import {
   listServicePackages,
   toggleServicePackage,
   adminUpdateHospital,
+  adminAddHospital,
   adminUpdateHospitalSpecialties,
   adminUploadHospitalPhotos,
   adminRemoveHospitalPhoto,
@@ -72,6 +73,7 @@ router.get("/service-packages", listServicePackages);
 router.patch("/service-packages/:id/toggle", toggleServicePackage);
 
 // 🏥 Hospital Management
+router.post("/hospitals", adminAddHospital);
 router.put("/hospitals/:userId", adminUpdateHospital);
 router.patch("/hospitals/:userId/specialties", adminUpdateHospitalSpecialties);
 router.post("/hospitals/:userId/photos", upload.array("photos", 5), adminUploadHospitalPhotos);

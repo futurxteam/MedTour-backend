@@ -388,6 +388,77 @@ export const adminUpdateHospital = async (req, res) => {
   }
 };
 
+export const adminAddHospital = async (req, res) => {
+  try {
+    const {
+      email,
+      password,
+      hospitalName,
+      hospitalName_ar,
+      description,
+      description_ar,
+      address,
+      address_ar,
+      city,
+      city_ar,
+      state,
+      state_ar,
+      country,
+      country_ar,
+      phone,
+      specialties,
+      avatar,
+    } = req.body;
+
+    if (!email || !password || !hospitalName) {
+      return res.status(400).json({ message: "Email, password, and hospital name are required" });
+    }
+
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(409).json({ message: "User with this email already exists" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      name: { en: hospitalName, ar: hospitalName_ar || "" },
+      email,
+      password: hashedPassword,
+      role: "hospital",
+      active: true,
+    });
+
+    const profile = await HospitalProfile.create({
+      userId: user._id,
+      hospitalStatus: "approved", // Set to approved to show on homepage
+      hospitalName: { en: hospitalName, ar: hospitalName_ar || "" },
+      description: { en: description || "", ar: description_ar || "" },
+      address: { en: address || "", ar: address_ar || "" },
+      city: { en: city || "", ar: city_ar || "" },
+      state: { en: state || "", ar: state_ar || "" },
+      country: { en: country || "", ar: country_ar || "" },
+      phone: phone || "",
+      specialties: specialties || [],
+      avatar: avatar || "",
+      photos: [],
+    });
+
+    res.status(201).json({
+      message: "Hospital created successfully",
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      },
+      profile,
+    });
+  } catch (error) {
+    console.error("Admin add hospital error:", error);
+    res.status(500).json({ message: error.message || "Failed to add hospital" });
+  }
+};
+
 export const adminUpdateHospitalSpecialties = async (req, res) => {
   try {
     const { userId } = req.params;
