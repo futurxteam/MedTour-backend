@@ -28,7 +28,7 @@ export const addDoctor = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const {
+    let {
       name,
       email,
       password,
@@ -41,10 +41,21 @@ export const addDoctor = async (req, res) => {
       licenseNumber = ""
     } = req.body;
 
-    if (!name || !email || !password) {
+    if (!name || !designation || !specializations || specializations.length === 0) {
       return res.status(400).json({
-        message: "Name, email, and password are required",
+        message: "Name, Designation, and at least one Specialization are required",
       });
+    }
+
+    if (!email) {
+      const slug = (typeof name === "string" ? name : (name?.en || "doctor"))
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "") || "doctor";
+      email = `${slug}.${Math.floor(1000 + Math.random() * 9000)}.${Date.now()}@medtour-doctor.com`;
+    }
+
+    if (!password) {
+      password = `DocPass@${Math.random().toString(36).substring(2, 10)}`;
     }
 
     // Fetch valid specialties by IDs
