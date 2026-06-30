@@ -13,7 +13,8 @@ import {
     getPublicHospitals,
     getPublicHospitalById,
     getPublicDoctorById,
-    getSurgeries
+    getSurgeries,
+    getPublicDoctors
 } from "../controllers/publicController.js";
 import { getDoctorPhoto } from "../controllers/hospitalController.js";
 
@@ -46,9 +47,10 @@ router.get("/cities", getCities);
 router.get("/lowest-quotes", getLowestQuotes);
 router.get("/common-procedures", getCommonProcedures);
 
-// Public Hospitals
+// Public Hospitals & Doctors
 router.get("/hospitals", getPublicHospitals);
 router.get("/hospitals/:id", getPublicHospitalById);
+router.get("/doctors", getPublicDoctors);
 router.get("/doctors/:id", getPublicDoctorById);
 
 export default router;

@@ -41,16 +41,22 @@ export const addDoctor = async (req, res) => {
       licenseNumber = ""
     } = req.body;
 
-    if (!name || !designation || !specializations || specializations.length === 0) {
+    // Extract raw name string for validation/slug (name may be string or {en,ar})
+    const rawName = typeof name === "string" ? name : (name?.en || "");
+
+    if (!rawName || !designation || !specializations || specializations.length === 0) {
       return res.status(400).json({
         message: "Name, Designation, and at least one Specialization are required",
       });
     }
 
+    // Normalize name to { en, ar } shape that User schema expects
+    const normalizedName = typeof name === "object" && name.en
+      ? { en: name.en, ar: name.ar || "" }
+      : { en: rawName, ar: "" };
+
     if (!email) {
-      const slug = (typeof name === "string" ? name : (name?.en || "doctor"))
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "") || "doctor";
+      const slug = rawName.toLowerCase().replace(/[^a-z0-9]/g, "") || "doctor";
       email = `${slug}.${Math.floor(1000 + Math.random() * 9000)}.${Date.now()}@medtour-doctor.com`;
     }
 
@@ -80,7 +86,7 @@ export const addDoctor = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const doctor = await User.create({
-      name,
+      name: normalizedName,
       email,
       password: hashedPassword,
       role: "doctor",
