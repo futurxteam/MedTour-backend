@@ -97,17 +97,17 @@ export const verifyOtpAndCreateEnquiry = async (req, res) => {
         };
 
         // Service-specific fields
-        if (specialtyId)       enquiryData.specialtyId = specialtyId;
-        if (surgeryId)         enquiryData.surgeryId = surgeryId;
-        if (doctorId)          enquiryData.doctorId = doctorId;
+        if (specialtyId) enquiryData.specialtyId = specialtyId;
+        if (surgeryId) enquiryData.surgeryId = surgeryId;
+        if (doctorId) enquiryData.doctorId = doctorId;
         if (hospitalProfileId) enquiryData.hospitalProfileId = hospitalProfileId;
 
         // Homepage-specific fields
-        if (country)           enquiryData.country = country;
-        if (city)              enquiryData.city = city;
-        if (medicalProblem)    enquiryData.medicalProblem = medicalProblem;
-        if (ageOrDob)          enquiryData.ageOrDob = ageOrDob;
-        if (consultationDate)  enquiryData.consultationDate = consultationDate;
+        if (country) enquiryData.country = country;
+        if (city) enquiryData.city = city;
+        if (medicalProblem) enquiryData.medicalProblem = medicalProblem;
+        if (ageOrDob) enquiryData.ageOrDob = ageOrDob;
+        if (consultationDate) enquiryData.consultationDate = consultationDate;
 
         const enquiry = await Enquiry.create(enquiryData);
 
@@ -173,8 +173,17 @@ export const getSurgeriesMenu = async (req, res) => {
         // Re-fetch surgeries with globalSurgeryId populated for names
         const surgeriesWithGlobal = await Surgery.find({ active: true })
             .populate("specialization")
-            .populate("globalSurgeryId", "surgeryName")
+            .populate("globalSurgeryId")
             .lean();
+
+        console.log("Total surgeries:", surgeriesWithGlobal.length);
+
+        surgeriesWithGlobal.slice(0, 5).forEach((s, i) => {
+            console.log(`\n----- Surgery ${i + 1} -----`);
+            console.log("Surgery _id:", s._id);
+            console.log("Global Surgery:", s.globalSurgeryId);
+            console.log("Specialization:", s.specialization?.name);
+        });
 
         // Rebuild with proper surgery names
         const groupedFinal = {};
@@ -186,11 +195,13 @@ export const getSurgeriesMenu = async (req, res) => {
             };
         });
 
-        surgeriesWithGlobal.forEach(s => {
+        surgeriesWithGlobal.forEach((s) => {
             if (!s.specialization) return;
 
+            if (!s.globalSurgeryId || !s.globalSurgeryId.active) return;
+
             const specName = getLocalized(s.specialization.name, lang);
-            const surgeryName = getLocalized(s.globalSurgeryId?.surgeryName, lang) || "Unknown";
+            const surgeryName = getLocalized(s.globalSurgeryId.surgeryName, lang);
 
             if (groupedFinal[specName]) {
                 const alreadyExists = groupedFinal[specName].surgeries.find(item => item.name === surgeryName);
@@ -370,7 +381,11 @@ export const globalSearch = async (req, res) => {
                 path: "specialization",
                 match: { active: true },
             })
-            .populate("globalSurgeryId", "surgeryName")
+            .populate({
+                path: "globalSurgeryId",
+                select: "surgeryName active",
+                match: { active: true }
+            })
             .select("_id description duration specialization globalSurgeryId")
             .limit(20)
             .lean();
@@ -495,7 +510,7 @@ export const getCities = async (req, res) => {
     try {
         const { country } = req.query;
         const lang = req.query.lang || "en";
-        
+
         if (!country) return res.json({ cities: [] });
 
         const cities = await City.find({ countryCode: country.toUpperCase() })
@@ -860,8 +875,8 @@ export const getPublicDoctorById = async (req, res) => {
             hospitalProfile = await HospitalProfile.findOne({
                 userId: profile.hospitalId
             })
-            .select("userId hospitalName city state country")
-            .lean();
+                .select("userId hospitalName city state country")
+                .lean();
         }
 
         // Find other doctors in the same hospital for related doctors
@@ -871,8 +886,8 @@ export const getPublicDoctorById = async (req, res) => {
                 hospitalId: profile.hospitalId,
                 userId: { $ne: doctorUser._id }
             })
-            .limit(3)
-            .lean();
+                .limit(3)
+                .lean();
 
             const relatedUserIds = relatedProfiles.map(p => p.userId);
             const relatedUsers = await User.find({

@@ -551,9 +551,9 @@ export const addSpecialty = async (req, res) => {
       return res.status(409).json({ message: "Specialty already exists" });
     }
 
-    const specialty = await Specialty.create({ 
-      name: { en: name, ar: req.body.name_ar || "" }, 
-      description: { en: description, ar: req.body.description_ar || "" } 
+    const specialty = await Specialty.create({
+      name: { en: name, ar: req.body.name_ar || "" },
+      description: { en: description, ar: req.body.description_ar || "" }
     });
     res.status(201).json(specialty);
   } catch (err) {
@@ -562,8 +562,10 @@ export const addSpecialty = async (req, res) => {
 };
 
 export const listSpecialties = async (req, res) => {
-  const specialties = await Specialty.find({}).lean();
-  const localized = specialties.map(s => ({
+  const specialties = await Specialty.find({
+    active: true
+  }).lean(); 
+    const localized = specialties.map(s => ({
     ...s,
     name: toEnglish(s.name),
     description: toEnglish(s.description)
@@ -612,8 +614,8 @@ export const getAllEnquiries = async (req, res) => {
       surgeryId: e.surgeryId ? { ...e.surgeryId, surgeryName: toEnglish(e.surgeryId.surgeryName) } : null,
       doctorId: e.doctorId ? { ...e.doctorId, name: toEnglish(e.doctorId.name) } : null,
       assignedPA: e.assignedPA ? { ...e.assignedPA, name: toEnglish(e.assignedPA.name) } : null,
-      hospitalProfileId: e.hospitalProfileId ? { 
-        ...e.hospitalProfileId, 
+      hospitalProfileId: e.hospitalProfileId ? {
+        ...e.hospitalProfileId,
         hospitalName: toEnglish(e.hospitalProfileId.hospitalName),
         city: toEnglish(e.hospitalProfileId.city)
       } : null,
@@ -677,7 +679,7 @@ export const listGlobalSurgeries = async (req, res) => {
     const surgeries = await GlobalSurgery.find()
       .populate("specialization", "name")
       .lean();
-    
+
     const localized = surgeries.map(s => ({
       ...s,
       surgeryName: toEnglish(s.surgeryName),
@@ -740,13 +742,13 @@ export const updateGlobalSurgery = async (req, res) => {
     const { surgeryName, specialization, description, duration, minimumCost, active } = req.body;
     const surgery = await GlobalSurgery.findByIdAndUpdate(
       req.params.id,
-      { 
+      {
         surgeryName: typeof surgeryName === "object" ? surgeryName : { en: surgeryName, ar: req.body.surgeryName_ar || "" },
         specialization,
         description: typeof description === "object" ? description : { en: description, ar: req.body.description_ar || "" },
         duration,
         minimumCost,
-        active 
+        active
       },
       { new: true }
     );
