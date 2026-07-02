@@ -564,8 +564,8 @@ export const addSpecialty = async (req, res) => {
 export const listSpecialties = async (req, res) => {
   const specialties = await Specialty.find({
     active: true
-  }).lean(); 
-    const localized = specialties.map(s => ({
+  }).lean();
+  const localized = specialties.map(s => ({
     ...s,
     name: toEnglish(s.name),
     description: toEnglish(s.description)
