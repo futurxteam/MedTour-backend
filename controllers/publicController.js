@@ -8,88 +8,29 @@ import City from "../models/City.js";
 import Specialty from "../models/Speciality.js";
 import GlobalSurgery from "../models/GlobalSurgery.js";
 import getLocalized from "../utils/localize.js";
-import { sendOTP, verifyOTP, normalizePhone } from "../services/otpService.js";
+import { syncEnquiryToGoogleSheets } from "../services/googleSheetsService.js";
 
 /**
- * Single source of truth for the OTP development bypass.
- * Set USE_TEST_OTP=true in .env to skip Twilio during development.
- * Set USE_TEST_OTP=false (or remove the line) to use Twilio in production.
+ * Phone normalization helper to ensure E.164 leading format.
  */
-const USE_TEST_OTP = process.env.USE_TEST_OTP === "true";
-
-/**
- * POST /api/public/enquiry/send-otp
- * Send OTP. In dev (USE_TEST_OTP=true) this is a no-op — returns success immediately.
- * In production it calls Twilio Verify SMS.
- */
-export const sendEnquiryOtp = async (req, res) => {
-    try {
-        const { phone } = req.body;
-
-        if (!phone) {
-            return res.status(400).json({ message: "Phone number is required" });
-        }
-
-        // ── DEVELOPMENT BYPASS ──────────────────────────────────────────
-        if (USE_TEST_OTP) {
-            console.log(`[DEV] sendEnquiryOtp: skipping Twilio for ${phone}`);
-
-            // Still normalize to catch obviously malformed numbers
-            const e164Phone = normalizePhone(phone);
-            if (!e164Phone) {
-                return res.status(400).json({ message: "Invalid phone number. Please check the code and digits." });
-            }
-
-            return res.status(200).json({
-                message: "Development OTP sent successfully",
-                phone: e164Phone,
-            });
-        }
-        // ── PRODUCTION: REAL TWILIO SMS ──────────────────────────────────
-
-        console.log(`[PROD] sendEnquiryOtp: sending OTP via Twilio to ${phone}`);
-        const result = await sendOTP(phone);
-
-        return res.status(200).json({
-            message: "OTP sent successfully",
-            phone: result.phone,
-        });
-
-    } catch (error) {
-        console.error("sendEnquiryOtp ERROR:", {
-            message: error.message,
-            code: error.code,
-            status: error.status,
-            moreInfo: error.moreInfo
-        });
-
-        if (error.code === 21614 || error.message?.includes("Invalid phone number")) {
-            return res.status(400).json({ message: "Invalid phone number. Please check the code and digits." });
-        }
-        if (error.code === 20429) {
-            return res.status(429).json({ message: "Too many requests. Please wait a minute." });
-        }
-
-        return res.status(500).json({ message: error.message || "Failed to send OTP. Technical error." });
+export const normalizePhone = (phone) => {
+    if (!phone) return "";
+    let cleaned = phone.replace(/[\s\-\(\)]/g, "");
+    if (!cleaned.startsWith("+")) {
+        cleaned = "+" + cleaned;
     }
+    return cleaned;
 };
 
 /**
- * POST /api/public/enquiry/verify-otp
- * Verify OTP then create an Enquiry.
- *
- * Dev mode  (USE_TEST_OTP=true):  accepts OTP "123" — no Twilio call.
- * Prod mode (USE_TEST_OTP=false): delegates to Twilio Verify.
- *
- * Shared by both Doctor Booking (source=doctor_direct)
- * and Homepage Enquiry (source=homepage).
+ * POST /api/public/enquiry
+ * Creates an enquiry directly in MongoDB and triggers background sync to Google Sheets.
  */
-export const verifyOtpAndCreateEnquiry = async (req, res) => {
+export const createPublicEnquiry = async (req, res) => {
     try {
         const {
             patientName,
             phone,
-            otp,
             contactMode,
             specialtyId,
             surgeryId,
@@ -103,83 +44,83 @@ export const verifyOtpAndCreateEnquiry = async (req, res) => {
             consultationDate,
         } = req.body;
 
-        if (!phone || !otp) {
-            return res.status(400).json({ message: "Phone and OTP are required" });
+        // 1. Validate required fields
+        if (!patientName || !patientName.trim()) {
+            return res.status(400).json({ message: "Patient name is required." });
+        }
+        if (!phone || !phone.trim()) {
+            return res.status(400).json({ message: "Phone number is required." });
         }
 
-        console.log(`[${source || "enquiry"}] verifyOtpAndCreateEnquiry received | phone: ${phone} | source: ${source}`);
-
-        // ── OTP VERIFICATION ────────────────────────────────────────────
-        if (USE_TEST_OTP) {
-            console.log(`[DEV] Development OTP accepted for ${phone}`);
-            if (otp !== "123") {
-                return res.status(400).json({ message: "Invalid OTP. Use 123 during development." });
-            }
-        } else {
-            console.log(`[PROD] Verifying OTP via Twilio for ${phone}`);
-            const verification = await verifyOTP(phone, otp);
-            if (!verification.valid) {
-                return res.status(400).json({ message: "Invalid or expired OTP. Please try again." });
-            }
+        const e164Phone = normalizePhone(phone);
+        if (!e164Phone) {
+            return res.status(400).json({ message: "Invalid phone number. Please check country code and digits." });
         }
 
-        // ── DUPLICATE BOOKING GUARD ─────────────────────────────────────
-        // Prevent double-click / accidental re-submission within the last 5 minutes
+        // 2. Duplicate booking guard: prevent rapid double-clicks for doctor consultations
         if (doctorId && consultationDate) {
             const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
             const duplicate = await Enquiry.findOne({
-                phone: normalizePhone(phone),
+                phone: e164Phone,
                 doctorId,
                 consultationDate,
                 createdAt: { $gte: fiveMinutesAgo },
             });
             if (duplicate) {
-                console.warn(`[${source}] Duplicate booking detected for doctor ${doctorId} on ${consultationDate}`);
+                console.warn(`[${source || "enquiry"}] Duplicate booking detected for doctor ${doctorId} on ${consultationDate}`);
                 return res.status(409).json({ message: "A booking already exists for this appointment." });
             }
         }
 
-        // ── CREATE ENQUIRY ───────────────────────────────────────────────
-        const e164Phone = normalizePhone(phone);
-
+        // 3. Create enquiry in MongoDB
         const enquiryData = {
-            patientName,
+            patientName: patientName.trim(),
             phone: e164Phone,
             contactMode: contactMode || "call",
-            otpVerified: true,
             source: source || "services",
+            sheetSyncStatus: "pending",
         };
 
-        // Service-specific fields
+        if (country && country.trim()) enquiryData.country = country.trim();
+        if (city && city.trim()) enquiryData.city = city.trim();
+        if (medicalProblem && medicalProblem.trim()) enquiryData.medicalProblem = medicalProblem.trim();
+        if (ageOrDob && ageOrDob.trim()) enquiryData.ageOrDob = ageOrDob.trim();
         if (specialtyId) enquiryData.specialtyId = specialtyId;
         if (surgeryId) enquiryData.surgeryId = surgeryId;
         if (doctorId) enquiryData.doctorId = doctorId;
         if (hospitalProfileId) enquiryData.hospitalProfileId = hospitalProfileId;
-
-        // Homepage / booking-specific fields
-        if (country) enquiryData.country = country;
-        if (city) enquiryData.city = city;
-        if (medicalProblem) enquiryData.medicalProblem = medicalProblem;
-        if (ageOrDob) enquiryData.ageOrDob = ageOrDob;
         if (consultationDate) enquiryData.consultationDate = consultationDate;
 
-        console.log(`[${source || "enquiry"}] Creating enquiry...`);
+        console.log(`[${source || "enquiry"}] Saving enquiry to MongoDB...`);
         const enquiry = await Enquiry.create(enquiryData);
-        console.log(`[${source || "enquiry"}] Enquiry created successfully | id: ${enquiry._id}`);
+        console.log(`[${source || "enquiry"}] Enquiry saved to MongoDB | id: ${enquiry._id}`);
 
+        // 4. Synchronize with Google Sheets (does not block user or cause save failure)
+        let sheetSyncStatus = "failed";
+        try {
+            const syncResult = await syncEnquiryToGoogleSheets(enquiry);
+            if (syncResult && syncResult.success) {
+                sheetSyncStatus = "synced";
+            }
+        } catch (syncErr) {
+            console.error("❌ Google Sheets sync failed:", syncErr.message);
+        }
+
+        // Update sheetSyncStatus in database asynchronously
+        Enquiry.findByIdAndUpdate(enquiry._id, { sheetSyncStatus }).catch((err) => {
+            console.error("Failed to update sheetSyncStatus:", err.message);
+        });
+
+        // 5. Return success response
         return res.status(201).json({
-            message: "Enquiry created successfully",
+            success: true,
+            message: "Enquiry submitted successfully",
             enquiryId: enquiry._id,
         });
 
     } catch (error) {
-        console.error("verifyOtpAndCreateEnquiry error:", error);
-
-        if (error.code === 20404) {
-            return res.status(400).json({ message: "OTP expired or not found. Please request a new one." });
-        }
-
-        return res.status(500).json({ message: "Booking could not be created. Please try again." });
+        console.error("createPublicEnquiry error:", error);
+        return res.status(500).json({ message: error.message || "Failed to submit enquiry. Please try again." });
     }
 };
 

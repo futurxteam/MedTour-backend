@@ -11,3 +11,9 @@ yarn-debug.log*
 # Build outputs
 dist/
 build/
+
+# One-off debug / migration scripts (contain or may contain credentials)
+inspect_env.js
+check_twilio_service.js
+tmp_fetch_data.js
+fix.js

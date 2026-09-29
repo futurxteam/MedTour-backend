@@ -3,8 +3,7 @@ import {
     getSurgeriesMenu,
     getPublicSurgeriesBySpecialty,
     getPublicDoctorsBySurgery,
-    sendEnquiryOtp,
-    verifyOtpAndCreateEnquiry,
+    createPublicEnquiry,
     globalSearch,
     getCountries,
     getCities,
@@ -33,8 +32,9 @@ router.get(
     "/surgeries/:surgeryId/public-doctors",
     getPublicDoctorsBySurgery
 );
-router.post("/enquiry/send-otp", sendEnquiryOtp);
-router.post("/enquiry/verify-otp", verifyOtpAndCreateEnquiry);
+
+// Direct enquiry submission route
+router.post("/enquiry", createPublicEnquiry);
 
 // Global search
 router.get("/search", globalSearch);

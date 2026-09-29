@@ -41,6 +41,11 @@ const connectDB = async () => {
 /* =========================
    Middleware
 ========================= */
+// Trust the first proxy hop (Render, Railway, etc.) so that
+// express-rate-limit reads the real client IP from X-Forwarded-For.
+// Without this, rate limiting is ineffective in production.
+app.set("trust proxy", 1);
+
 app.use(
    cors({
       origin: [

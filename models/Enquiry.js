@@ -15,9 +15,10 @@ const enquirySchema = new mongoose.Schema(
             required: true,
         },
 
-        otpVerified: {
-            type: Boolean,
-            default: false,
+        sheetSyncStatus: {
+            type: String,
+            enum: ["pending", "synced", "failed"],
+            default: "pending",
         },
 
         // Source of enquiry
